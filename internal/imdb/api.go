@@ -681,6 +681,15 @@ func (c *client) handleWafChallenge(tab *rod.Page) error {
 	if err := c.browser.SetCookies([]*proto.NetworkCookieParam{cookie}); err != nil {
 		return fmt.Errorf("failure setting browser cookies: %w", err)
 	}
+	// Reload so the browser re-requests the page with the WAF token cookie.
+	// Without this, headless Chrome stays on the challenge page because it
+	// doesn't execute the auto-redirect JavaScript that fires in headed mode.
+	if err := tab.Reload(); err != nil {
+		return fmt.Errorf("failure reloading tab after waf challenge: %w", err)
+	}
+	if err := tab.WaitLoad(); err != nil {
+		return fmt.Errorf("failure waiting for tab to load after waf challenge: %w", err)
+	}
 	c.logger.Info("solved aws waf challenge")
 
 	return nil

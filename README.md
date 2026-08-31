@@ -1,5 +1,7 @@
-[![sync](https://github.com/cecobask/imdb-trakt-sync/actions/workflows/sync.yaml/badge.svg)](https://github.com/cecobask/imdb-trakt-sync/actions/workflows/sync.yaml)
-[![quality](https://github.com/cecobask/imdb-trakt-sync/actions/workflows/quality.yaml/badge.svg)](https://github.com/cecobask/imdb-trakt-sync/actions/workflows/quality.yaml)
+[![sync](https://github.com/aktur/imdb-trakt-sync-1/actions/workflows/sync.yaml/badge.svg)](https://github.com/aktur/imdb-trakt-sync-1/actions/workflows/sync.yaml)
+[![quality](https://github.com/aktur/imdb-trakt-sync-1/actions/workflows/quality.yaml/badge.svg)](https://github.com/aktur/imdb-trakt-sync-1/actions/workflows/quality.yaml)
+
+> **Note for forks:** The badges above are hardcoded to this repository. After forking, update the two badge URLs at the top of this file, replacing `aktur/imdb-trakt-sync-1` with your own `{username}/{repo-name}`.
 
 # imdb-trakt-sync
 
