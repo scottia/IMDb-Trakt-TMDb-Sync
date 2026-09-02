@@ -24,7 +24,7 @@ env:
   ITS_SYNC_TIMEOUT: ${{ secrets.SYNC_TIMEOUT }}
   ITS_TRAKT_CLIENTID: ${{ secrets.TRAKT_CLIENTID }}
   ITS_TRAKT_CLIENTSECRET: ${{ secrets.TRAKT_CLIENTSECRET }}
-  ITS_TRAKT_TOKEN: ${{ github.workspace }}/trakt-token.json
+  ITS_TRAKT_TOKENFILE: ${{ github.workspace }}/trakt-token.json
 jobs:
   sync:
     runs-on: ubuntu-24.04
