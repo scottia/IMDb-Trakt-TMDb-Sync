@@ -33,6 +33,12 @@ type Trakt struct {
 	TokenFile    *string `koanf:"TOKENFILE"`
 }
 
+type TMDb struct {
+	Enabled         *bool   `koanf:"ENABLED"`
+	ReadAccessToken *string `koanf:"READACCESSTOKEN"`
+	SessionID       *string `koanf:"SESSIONID"`
+}
+
 type Sync struct {
 	Mode      *SyncMode      `koanf:"MODE"`
 	History   *bool          `koanf:"HISTORY"`
@@ -46,6 +52,7 @@ type Config struct {
 	koanf *koanf.Koanf
 	IMDb  IMDb  `koanf:"IMDB"`
 	Trakt Trakt `koanf:"TRAKT"`
+	TMDb  TMDb  `koanf:"TMDB"`
 	Sync  Sync  `koanf:"SYNC"`
 }
 
@@ -142,6 +149,14 @@ func (c *Config) Validate() error {
 	if !slices.Contains(validSyncModes(), string(*c.Sync.Mode)) {
 		return fmt.Errorf("field 'SYNC_MODE' must be one of: %s", strings.Join(validSyncModes(), ", "))
 	}
+	if c.TMDb.Enabled != nil && *c.TMDb.Enabled {
+		if isNilOrEmpty(c.TMDb.ReadAccessToken) {
+			return fmt.Errorf("field 'TMDB_READACCESSTOKEN' is required when 'TMDB_ENABLED' is true")
+		}
+		if isNilOrEmpty(c.TMDb.SessionID) {
+			return fmt.Errorf("field 'TMDB_SESSIONID' is required when 'TMDB_ENABLED' is true")
+		}
+	}
 	return c.checkDummies()
 }
 
@@ -209,6 +224,15 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Trakt.TokenFile == nil || *c.Trakt.TokenFile == "" {
 		c.Trakt.TokenFile = pointer("trakt-token.json")
+	}
+	if c.TMDb.Enabled == nil {
+		c.TMDb.Enabled = pointer(false)
+	}
+	if c.TMDb.ReadAccessToken == nil {
+		c.TMDb.ReadAccessToken = pointer("")
+	}
+	if c.TMDb.SessionID == nil {
+		c.TMDb.SessionID = pointer("")
 	}
 	if c.Sync.Mode == nil {
 		c.Sync.Mode = pointer(SyncModeDryRun)
