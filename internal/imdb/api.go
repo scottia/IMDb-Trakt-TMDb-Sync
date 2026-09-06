@@ -28,6 +28,7 @@ type API interface {
 	WatchlistGet() (*List, error)
 	RatingsExport() error
 	RatingsGet() (Items, error)
+	RatingsCSV() []byte
 }
 
 const (
@@ -61,6 +62,7 @@ type client struct {
 	userID              string
 	watchlistID         string
 	skipRatingsDownload bool
+	ratingsCSV           []byte
 }
 
 func NewAPI(ctx context.Context, conf *config.IMDb, logger *slog.Logger) (API, error) {
@@ -351,6 +353,10 @@ func (c *client) RatingsGet() (Items, error) {
 	return c.ratingsDownload(filteredResources[0])
 }
 
+func (c *client) RatingsCSV() []byte {
+	return bytes.Clone(c.ratingsCSV)
+}
+
 func (c *client) ratingsDownload(resource *rod.Element) (Items, error) {
 	downloadButton, err := resource.Element("button[data-testid='export-status-button']")
 	if err != nil {
@@ -360,7 +366,9 @@ func (c *client) ratingsDownload(resource *rod.Element) (Items, error) {
 	if err = downloadButton.Click(proto.InputMouseButtonLeft, 1); err != nil {
 		return nil, fmt.Errorf("failure clicking on download button: %w", err)
 	}
-	items, err := transformData(wait())
+	data := wait()
+	c.ratingsCSV = bytes.Clone(data)
+	items, err := transformData(data)
 	if err != nil {
 		return nil, fmt.Errorf("failure transforming ratings data: %w", err)
 	}
