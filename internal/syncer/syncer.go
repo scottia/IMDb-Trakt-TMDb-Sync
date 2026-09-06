@@ -2,6 +2,7 @@ package syncer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -17,6 +18,7 @@ type Syncer struct {
 	logger      *slog.Logger
 	imdbClient  imdb.API
 	traktClient trakt.API
+	traktConf   appconfig.Trakt
 	user        *user
 	conf        appconfig.Sync
 	authless    bool
@@ -37,18 +39,14 @@ func NewSyncer(ctx context.Context, conf *appconfig.Config) (*Syncer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failure initialising imdb client: %w", err)
 	}
-	traktClient, err := trakt.NewAPI(ctx, conf.Trakt, log)
-	if err != nil {
-		return nil, fmt.Errorf("failure initialising trakt client: %w", err)
-	}
 	syncer := &Syncer{
-		logger:      log,
-		imdbClient:  imdbClient,
-		traktClient: traktClient,
-		user:        &user{},
-		conf:        conf.Sync,
-		authless:    *conf.IMDb.Auth == appconfig.IMDbAuthMethodNone,
-		tmdbConf:    conf.TMDb,
+		logger:     log,
+		imdbClient: imdbClient,
+		traktConf:  conf.Trakt,
+		user:       &user{},
+		conf:       conf.Sync,
+		authless:   *conf.IMDb.Auth == appconfig.IMDbAuthMethodNone,
+		tmdbConf:   conf.TMDb,
 		tmdbBrowser: tmdb.BrowserOptions{
 			BrowserPath: *conf.IMDb.BrowserPath,
 			Headless:    *conf.IMDb.Headless,
@@ -71,27 +69,47 @@ func NewSyncer(ctx context.Context, conf *appconfig.Config) (*Syncer, error) {
 
 func (s *Syncer) Sync(ctx context.Context) error {
 	s.logger.Info("sync started")
-	if err := s.hydrate(ctx); err != nil {
-		s.logger.Error("failure hydrating imdb client", logger.Error(err))
+	if err := s.hydrateIMDb(); err != nil {
+		s.logger.Error("failure hydrating imdb source", logger.Error(err))
 		return err
+	}
+
+	var destinationErrors []error
+	if err := s.syncTraktDestination(ctx); err != nil {
+		s.logger.Error("trakt destination failed", logger.Error(err))
+		destinationErrors = append(destinationErrors, fmt.Errorf("trakt destination: %w", err))
+	} else {
+		s.logger.Info("trakt destination completed")
+	}
+
+	if err := s.syncTMDbRatings(ctx); err != nil {
+		s.logger.Error("tmdb destination failed", logger.Error(err))
+		destinationErrors = append(destinationErrors, fmt.Errorf("tmdb destination: %w", err))
+	} else {
+		s.logger.Info("tmdb destination completed")
+	}
+
+	if len(destinationErrors) > 0 {
+		return fmt.Errorf("one or more destination syncs failed: %w", errors.Join(destinationErrors...))
+	}
+
+	s.logger.Info("sync completed")
+	return nil
+}
+
+func (s *Syncer) syncTraktDestination(ctx context.Context) error {
+	if err := s.hydrateTrakt(ctx); err != nil {
+		return fmt.Errorf("failure hydrating trakt client: %w", err)
 	}
 	if err := s.syncLists(ctx); err != nil {
-		s.logger.Error("failure syncing lists", logger.Error(err))
-		return err
+		return fmt.Errorf("failure syncing lists: %w", err)
 	}
 	if err := s.syncRatings(ctx); err != nil {
-		s.logger.Error("failure syncing ratings", logger.Error(err))
-		return err
+		return fmt.Errorf("failure syncing ratings: %w", err)
 	}
 	if err := s.syncHistory(ctx); err != nil {
-		s.logger.Error("failure syncing history", logger.Error(err))
-		return err
+		return fmt.Errorf("failure syncing history: %w", err)
 	}
-	if err := s.syncTMDbRatings(ctx); err != nil {
-		s.logger.Error("failure importing imdb ratings to tmdb", logger.Error(err))
-		return err
-	}
-	s.logger.Info("sync completed")
 	return nil
 }
 
@@ -127,7 +145,7 @@ func (s *Syncer) setupTraktLists(ctx context.Context, imdbLists imdb.Lists) (tra
 	return traktListsMeta, nil
 }
 
-func (s *Syncer) hydrate(ctx context.Context) error {
+func (s *Syncer) hydrateIMDb() error {
 	lids := make([]string, 0, len(s.user.imdbLists))
 	for lid := range s.user.imdbLists {
 		lids = append(lids, lid)
@@ -152,6 +170,46 @@ func (s *Syncer) hydrate(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("failure fetching imdb lists: %w", err)
 		}
+		for _, imdbList := range imdbLists {
+			s.user.imdbLists[imdbList.ListID] = imdbList
+		}
+	}
+	if s.authless {
+		return nil
+	}
+	if *s.conf.Watchlist {
+		imdbWatchlist, err := s.imdbClient.WatchlistGet()
+		if err != nil {
+			return fmt.Errorf("failure fetching imdb watchlist: %w", err)
+		}
+		s.user.imdbLists[imdbWatchlist.ListID] = *imdbWatchlist
+	}
+	if *s.conf.Ratings {
+		imdbRatings, err := s.imdbClient.RatingsGet()
+		if err != nil {
+			return fmt.Errorf("failure fetching imdb ratings: %w", err)
+		}
+		for _, imdbRating := range imdbRatings {
+			s.user.imdbRatings[imdbRating.ID] = imdbRating
+		}
+	}
+	return nil
+}
+
+func (s *Syncer) hydrateTrakt(ctx context.Context) error {
+	traktClient, err := trakt.NewAPI(ctx, s.traktConf, s.logger)
+	if err != nil {
+		return fmt.Errorf("failure initialising trakt client: %w", err)
+	}
+	s.traktClient = traktClient
+
+	if *s.conf.Lists {
+		imdbLists := make(imdb.Lists, 0, len(s.user.imdbLists))
+		for _, imdbList := range s.user.imdbLists {
+			if !imdbList.IsWatchlist {
+				imdbLists = append(imdbLists, imdbList)
+			}
+		}
 		traktIDMetas, err := s.setupTraktLists(ctx, imdbLists)
 		if err != nil {
 			return fmt.Errorf("failure setting up trakt lists: %w", err)
@@ -168,11 +226,17 @@ func (s *Syncer) hydrate(ctx context.Context) error {
 		return nil
 	}
 	if *s.conf.Watchlist {
-		imdbWatchlist, err := s.imdbClient.WatchlistGet()
-		if err != nil {
-			return fmt.Errorf("failure fetching imdb watchlist: %w", err)
+		var imdbWatchlist *imdb.List
+		for _, imdbList := range s.user.imdbLists {
+			if imdbList.IsWatchlist {
+				watchlist := imdbList
+				imdbWatchlist = &watchlist
+				break
+			}
 		}
-		s.user.imdbLists[imdbWatchlist.ListID] = *imdbWatchlist
+		if imdbWatchlist == nil {
+			return fmt.Errorf("imdb watchlist was not hydrated")
+		}
 		traktWatchlist, err := s.traktClient.WatchlistGet(ctx)
 		if err != nil {
 			return fmt.Errorf("failure fetching trakt watchlist: %w", err)
@@ -192,13 +256,6 @@ func (s *Syncer) hydrate(ctx context.Context) error {
 			if id != nil {
 				s.user.traktRatings[*id] = traktRating
 			}
-		}
-		imdbRatings, err := s.imdbClient.RatingsGet()
-		if err != nil {
-			return fmt.Errorf("failure fetching imdb ratings: %w", err)
-		}
-		for _, imdbRating := range imdbRatings {
-			s.user.imdbRatings[imdbRating.ID] = imdbRating
 		}
 	}
 	return nil
@@ -234,7 +291,7 @@ func (s *Syncer) syncLists(ctx context.Context) error {
 					continue
 				}
 				if err := s.traktClient.WatchlistItemsRemove(ctx, diff.Remove); err != nil {
-					return fmt.Errorf("failure removing trakt watchlist items: %w", err)
+					return fmt.Errorf("failure removing items from trakt watchlist: %w", err)
 				}
 			} else {
 				s.logger.Info("no trakt watchlist items to remove")
@@ -305,26 +362,26 @@ func (s *Syncer) syncRatings(ctx context.Context) error {
 
 func (s *Syncer) syncTMDbRatings(ctx context.Context) error {
 	if s.tmdbConf.Enabled == nil || !*s.tmdbConf.Enabled {
-		s.logger.Info("skipping tmdb ratings import")
+		s.logger.Info("skipping tmdb ratings sync")
 		return nil
 	}
 	if s.authless {
-		s.logger.Info("skipping tmdb ratings import since no imdb auth was provided")
+		s.logger.Info("skipping tmdb ratings sync since no imdb auth was provided")
 		return nil
 	}
 	if !*s.conf.Ratings {
-		s.logger.Info("skipping tmdb ratings import since ratings sync is disabled")
+		s.logger.Info("skipping tmdb ratings sync since ratings sync is disabled")
 		return nil
 	}
 
 	data := s.imdbClient.RatingsCSV()
 	if len(data) == 0 {
-		s.logger.Info("skipping tmdb ratings import since no imdb ratings csv was downloaded")
+		s.logger.Info("skipping tmdb ratings sync since no imdb ratings csv was downloaded")
 		return nil
 	}
 	if *s.conf.Mode == appconfig.SyncModeDryRun {
 		s.logger.Info(
-			"sync would have submitted imdb ratings csv to tmdb native importer",
+			"sync would compare imdb ratings against tmdb api",
 			"count", len(s.user.imdbRatings),
 			"bytes", len(data),
 		)
@@ -332,7 +389,7 @@ func (s *Syncer) syncTMDbRatings(ctx context.Context) error {
 	}
 
 	if err := tmdb.ImportRatings(ctx, &s.tmdbConf, s.tmdbBrowser, s.logger, data); err != nil {
-		return fmt.Errorf("failure importing imdb ratings to tmdb: %w", err)
+		return fmt.Errorf("failure syncing imdb ratings to tmdb: %w", err)
 	}
 	return nil
 }
@@ -346,9 +403,6 @@ func (s *Syncer) syncHistory(ctx context.Context) error {
 		s.logger.Info("skipping history sync")
 		return nil
 	}
-	// imdb doesn't offer functionality similar to trakt history, hence why there can't be a direct mapping between them
-	// the syncer will assume a user to have watched an item if they've submitted a rating for it
-	// if the above is satisfied and the user's history for this item is empty, a new history entry is added!
 	diff := itemsDifference(s.user.imdbRatings, s.user.traktRatings)
 	if len(diff.Add) > 0 {
 		var historyToAdd trakt.Items

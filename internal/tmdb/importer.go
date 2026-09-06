@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -54,12 +56,48 @@ type target struct {
 	episodeNumber int
 }
 
+func (t target) key() string {
+	return fmt.Sprintf("%s:%d", t.kind, t.id)
+}
+
+type accountDetails struct {
+	ID int `json:"id"`
+}
+
+type ratedItem struct {
+	ID     int     `json:"id"`
+	Rating float64 `json:"rating"`
+}
+
+type ratedPage struct {
+	Page       int         `json:"page"`
+	Results    []ratedItem `json:"results"`
+	TotalPages int         `json:"total_pages"`
+}
+
 type apiClient struct {
 	baseURL    string
 	readToken  string
 	sessionID  string
 	httpClient *http.Client
 	logger     *slog.Logger
+}
+
+type apiStatusError struct {
+	status  int
+	message string
+}
+
+func (e *apiStatusError) Error() string {
+	return fmt.Sprintf("tmdb api returned status %d: %s", e.status, e.message)
+}
+
+type mappingError struct {
+	message string
+}
+
+func (e *mappingError) Error() string {
+	return e.message
 }
 
 func ImportRatings(
@@ -100,52 +138,92 @@ func ImportRatings(
 		},
 		logger: logger,
 	}
-	if err := client.validateSession(ctx); err != nil {
+
+	accountID, err := client.validateSession(ctx)
+	if err != nil {
 		return fmt.Errorf("failure validating tmdb api session: %w", err)
 	}
+	existing, err := client.fetchExistingRatings(ctx, accountID)
+	if err != nil {
+		return fmt.Errorf("failure fetching existing tmdb ratings: %w", err)
+	}
 
-	var failures []string
-	succeeded := 0
+	var (
+		added     int
+		updated   int
+		unchanged int
+		failed    int
+	)
 	for i, item := range ratings {
 		if item.Value < 0.5 || item.Value > 10 {
-			failures = append(failures, fmt.Sprintf("%s: rating %.1f is outside tmdb range 0.5-10", item.IMDbID, item.Value))
+			failed++
+			logger.Warn("ignoring tmdb rating item failure", "imdb_id", item.IMDbID, "error", fmt.Sprintf("rating %.1f is outside tmdb range 0.5-10", item.Value))
 			continue
 		}
 
 		resolved, err := client.findByIMDbID(ctx, item)
 		if err != nil {
-			failures = append(failures, fmt.Sprintf("%s: %v", item.IMDbID, err))
+			if isHardItemError(err) {
+				return fmt.Errorf("failure resolving %s through tmdb api: %w", item.IMDbID, err)
+			}
+			failed++
+			logger.Warn("ignoring tmdb rating item failure", "imdb_id", item.IMDbID, "error", err)
 			continue
 		}
-		if err := client.addRating(ctx, resolved, item.Value); err != nil {
-			failures = append(failures, fmt.Sprintf("%s: %v", item.IMDbID, err))
-			continue
+
+		current, found := existing[resolved.key()]
+		if found && ratingsEqual(current, item.Value) {
+			unchanged++
+		} else {
+			if err := client.addRating(ctx, resolved, item.Value); err != nil {
+				if isHardItemError(err) {
+					return fmt.Errorf("failure writing %s rating to tmdb api: %w", item.IMDbID, err)
+				}
+				failed++
+				logger.Warn("ignoring tmdb rating item failure", "imdb_id", item.IMDbID, "error", err)
+				continue
+			}
+			existing[resolved.key()] = item.Value
+			if found {
+				updated++
+			} else {
+				added++
+			}
 		}
-		succeeded++
 
 		if (i+1)%50 == 0 || i+1 == len(ratings) {
 			logger.Info(
 				"tmdb api ratings progress",
 				"processed", i+1,
 				"total", len(ratings),
-				"succeeded", succeeded,
-				"failed", len(failures),
+				"added", added,
+				"updated", updated,
+				"unchanged", unchanged,
+				"failed", failed,
 			)
 		}
 	}
 
-	if len(failures) > 0 {
-		for _, failure := range failures {
-			logger.Warn("tmdb api rating failed", "item", failure)
-		}
-		return fmt.Errorf(
-			"tmdb api ratings sync completed with %d failures out of %d",
-			len(failures),
-			len(ratings),
+	if failed > 0 {
+		logger.Warn(
+			"tmdb api ratings sync completed with ignored item failures",
+			"total", len(ratings),
+			"added", added,
+			"updated", updated,
+			"unchanged", unchanged,
+			"failed", failed,
 		)
+		return nil
 	}
 
-	logger.Info("synced imdb ratings to tmdb api", "count", succeeded)
+	logger.Info(
+		"tmdb api ratings sync completed",
+		"total", len(ratings),
+		"added", added,
+		"updated", updated,
+		"unchanged", unchanged,
+		"failed", failed,
+	)
 	return nil
 }
 
@@ -210,14 +288,63 @@ func parseRatingsCSV(data []byte) ([]rating, error) {
 	return ratings, nil
 }
 
-func (c *apiClient) validateSession(ctx context.Context) error {
+func (c *apiClient) validateSession(ctx context.Context) (int, error) {
 	values := url.Values{}
 	values.Set("session_id", c.sessionID)
-	_, err := c.do(ctx, http.MethodGet, "/account?"+values.Encode(), nil, http.StatusOK)
+	body, err := c.do(ctx, http.MethodGet, "/account?"+values.Encode(), nil, http.StatusOK)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	return nil
+	var account accountDetails
+	if err := json.Unmarshal(body, &account); err != nil {
+		return 0, fmt.Errorf("failure decoding tmdb account response: %w", err)
+	}
+	if account.ID == 0 {
+		return 0, fmt.Errorf("tmdb account response did not contain a valid account id")
+	}
+	return account.ID, nil
+}
+
+func (c *apiClient) fetchExistingRatings(ctx context.Context, accountID int) (map[string]float64, error) {
+	type endpoint struct {
+		kind string
+		path string
+	}
+	endpoints := []endpoint{
+		{kind: "movie", path: fmt.Sprintf("/account/%d/rated/movies", accountID)},
+		{kind: "tv", path: fmt.Sprintf("/account/%d/rated/tv", accountID)},
+		{kind: "episode", path: fmt.Sprintf("/account/%d/rated/tv/episodes", accountID)},
+	}
+
+	existing := make(map[string]float64)
+	for _, endpoint := range endpoints {
+		page := 1
+		for {
+			values := url.Values{}
+			values.Set("session_id", c.sessionID)
+			values.Set("page", strconv.Itoa(page))
+
+			body, err := c.do(ctx, http.MethodGet, endpoint.path+"?"+values.Encode(), nil, http.StatusOK)
+			if err != nil {
+				return nil, fmt.Errorf("failure fetching %s ratings page %d: %w", endpoint.kind, page, err)
+			}
+			var result ratedPage
+			if err := json.Unmarshal(body, &result); err != nil {
+				return nil, fmt.Errorf("failure decoding %s ratings page %d: %w", endpoint.kind, page, err)
+			}
+			for _, item := range result.Results {
+				existing[fmt.Sprintf("%s:%d", endpoint.kind, item.ID)] = item.Rating
+			}
+
+			if result.TotalPages <= 1 || page >= result.TotalPages {
+				break
+			}
+			page++
+		}
+	}
+
+	c.logger.Info("loaded existing tmdb ratings", "count", len(existing))
+	return existing, nil
 }
 
 func (c *apiClient) findByIMDbID(ctx context.Context, item rating) (target, error) {
@@ -290,13 +417,35 @@ func resolveSingleExactResult(item rating, result findResponse) (target, error) 
 }
 
 func resolutionError(item rating, result findResponse) error {
-	return fmt.Errorf(
+	return &mappingError{message: fmt.Sprintf(
 		"no unambiguous exact tmdb mapping for imdb id (title type %q; movie=%d tv=%d episode=%d)",
 		item.Kind,
 		len(result.MovieResults),
 		len(result.TVResults),
 		len(result.TVEpisodeResults),
-	)
+	)}
+}
+
+func ratingsEqual(a, b float64) bool {
+	return math.Abs(a-b) < 0.001
+}
+
+func isHardItemError(err error) bool {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var mappingErr *mappingError
+	if errors.As(err, &mappingErr) {
+		return false
+	}
+	var statusErr *apiStatusError
+	if errors.As(err, &statusErr) {
+		return statusErr.status == http.StatusUnauthorized ||
+			statusErr.status == http.StatusForbidden ||
+			statusErr.status == http.StatusTooManyRequests ||
+			statusErr.status >= 500
+	}
+	return true
 }
 
 func (c *apiClient) addRating(ctx context.Context, item target, value float64) error {
@@ -308,7 +457,7 @@ func (c *apiClient) addRating(ctx context.Context, item target, value float64) e
 		path = fmt.Sprintf("/tv/%d/rating", item.id)
 	case "episode":
 		if item.showID == 0 {
-			return fmt.Errorf("tmdb episode mapping did not include show_id")
+			return &mappingError{message: "tmdb episode mapping did not include show_id"}
 		}
 		path = fmt.Sprintf(
 			"/tv/%d/season/%d/episode/%d/rating",
@@ -317,7 +466,7 @@ func (c *apiClient) addRating(ctx context.Context, item target, value float64) e
 			item.episodeNumber,
 		)
 	default:
-		return fmt.Errorf("unsupported tmdb target kind %q", item.kind)
+		return &mappingError{message: fmt.Sprintf("unsupported tmdb target kind %q", item.kind)}
 	}
 
 	values := url.Values{}
@@ -397,7 +546,7 @@ func (c *apiClient) do(
 		if len(message) > 500 {
 			message = message[:500] + "..."
 		}
-		return nil, fmt.Errorf("tmdb api returned status %d: %s", resp.StatusCode, message)
+		return nil, &apiStatusError{status: resp.StatusCode, message: message}
 	}
 	return nil, fmt.Errorf("tmdb request exhausted retries")
 }
