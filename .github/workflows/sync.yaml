@@ -26,7 +26,8 @@ env:
   ITS_TRAKT_CLIENTSECRET: ${{ secrets.TRAKT_CLIENTSECRET }}
   ITS_TRAKT_TOKENFILE: ${{ github.workspace }}/trakt-token.json
   ITS_TMDB_ENABLED: ${{ secrets.TMDB_ENABLED }}
-  ITS_TMDB_COOKIE: ${{ secrets.TMDB_COOKIE }}
+  ITS_TMDB_READACCESSTOKEN: ${{ secrets.TMDB_READ_ACCESS_TOKEN }}
+  ITS_TMDB_SESSIONID: ${{ secrets.TMDB_SESSION_ID }}
 jobs:
   sync:
     runs-on: ubuntu-24.04
