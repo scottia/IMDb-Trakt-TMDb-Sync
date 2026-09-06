@@ -1,6 +1,6 @@
 [![sync](https://github.com/scottia/IMDb-Trakt-TMDb-Sync/actions/workflows/sync.yaml/badge.svg?branch=main)](https://github.com/scottia/IMDb-Trakt-TMDb-Sync/actions/workflows/sync.yaml?query=branch%3Amain)
 [![quality](https://github.com/scottia/IMDb-Trakt-TMDb-Sync/actions/workflows/quality.yaml/badge.svg?branch=main)](https://github.com/scottia/IMDb-Trakt-TMDb-Sync/actions/workflows/quality.yaml?query=branch%3Amain)
-> **Note for forks:** The badges above are hardcoded to this repository. After forking, update the two badge URLs at the top of this file, replacing `scottia/imdb-trakt-sync` with your own `{username}/{repo-name}`.
+> **Note for forks:** The badges above are hardcoded to this repository. After forking, update the two badge URLs at the top of this file, replacing `scottia/IMDb-Trakt-TMDb-Sync` with your own `{username}/{repo-name}`.
 
 # imdb-trakt-sync
 
@@ -8,10 +8,10 @@
 
 Command-line application for one-way synchronization from [IMDb](https://www.imdb.com/) to two destinations:
 
-- **[Trakt](https://trakt.tv/dashboard):** watchlist, lists, ratings, and rating-derived history.
-- **[TMDb](https://www.themoviedb.org):** ratings only, using the TMDb API when the optional TMDb destination is enabled.
+- **[TRAKT](https://trakt.tv/dashboard):** watchlist, lists, ratings, and rating-derived history.
+- **[TMDb](https://www.themoviedb.org):** ratings only, using the TMDb API when the optional [TMDB_ENABLED] is`TRUE`
 
-IMDb is the source of truth. Changes made directly on Trakt or TMDb are not written back to IMDb. Destination removals depend on `SYNC_MODE`.
+IMDb is the source of truth. Changes made directly on Trakt or TMDb are not written back to IMDb. Destination removals depend on [SYNC_MODE]
 
 > [!IMPORTANT]
 > Trakt API app creation now requires Trakt VIP access. See the upstream [VIP detail / issue #107](https://github.com/cecobask/imdb-trakt-sync/issues/107).
