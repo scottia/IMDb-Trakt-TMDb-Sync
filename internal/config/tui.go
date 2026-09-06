@@ -165,8 +165,10 @@ func NewTeaProgram(conf map[string]interface{}, opts ...tea.ProgramOption) *tea.
 
 func isSensitiveField(name string) bool {
 	switch name {
-	case "IMDB_PASSWORD",
+	case "IMDB_EMAIL",
+		"IMDB_PASSWORD",
 		"IMDB_COOKIEATMAIN",
+		"TRAKT_CLIENTID",
 		"TRAKT_CLIENTSECRET",
 		"TMDB_READACCESSTOKEN",
 		"TMDB_SESSIONID":
