@@ -5,7 +5,7 @@
 
 # imdb-trakt-sync
 
-<img src="./assets/logo.svg" alt="IMDb to Trakt and TMDb" width="760"/>
+<img src="./assets/logo.png" alt="IMDb to Trakt and TMDb"/>
 
 Command-line application for one-way synchronization from [IMDb](https://www.imdb.com/) to two destinations:
 
@@ -19,6 +19,11 @@ IMDb is the source of truth. Changes made directly on Trakt or TMDb are not writ
 
 # Configuration
 
+> [!IMPORTANT]
+> Trakt API app creation now requires Trakt VIP access. See the upstream [VIP detail / issue #107](https://github.com/cecobask/imdb-trakt-sync/issues/107).
+
+# Configuration
+
 <table>
     <tr>
         <th>FIELD NAME</th>
@@ -26,7 +31,7 @@ IMDb is the source of truth. Changes made directly on Trakt or TMDb are not writ
         <th>DEFAULT VALUE</th>
         <th>ALLOWED VALUES</th>
         <th>DESCRIPTION</th>
-    </tr>
+    </tr>p
     <tr>
         <td>IMDB_AUTH</td>
         <td>variable</td>
