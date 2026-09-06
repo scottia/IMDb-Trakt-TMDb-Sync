@@ -10,6 +10,7 @@ import (
 	appconfig "github.com/cecobask/imdb-trakt-sync/internal/config"
 	"github.com/cecobask/imdb-trakt-sync/internal/imdb"
 	"github.com/cecobask/imdb-trakt-sync/internal/logger"
+	"github.com/cecobask/imdb-trakt-sync/internal/syncstate"
 	"github.com/cecobask/imdb-trakt-sync/internal/tmdb"
 	"github.com/cecobask/imdb-trakt-sync/internal/trakt"
 )
@@ -24,6 +25,7 @@ type Syncer struct {
 	authless    bool
 	tmdbConf    appconfig.TMDb
 	tmdbBrowser tmdb.BrowserOptions
+	syncState   *syncstate.State
 }
 
 type user struct {
@@ -73,6 +75,10 @@ func (s *Syncer) Sync(ctx context.Context) error {
 		s.logger.Error("failure hydrating imdb source", logger.Error(err))
 		return err
 	}
+	if err := s.prepareSyncState(); err != nil {
+		s.logger.Error("failure preparing persistent sync state", logger.Error(err))
+		return err
+	}
 
 	var destinationErrors []error
 	if err := s.syncTraktDestination(ctx); err != nil {
@@ -91,6 +97,13 @@ func (s *Syncer) Sync(ctx context.Context) error {
 
 	if len(destinationErrors) > 0 {
 		return fmt.Errorf("one or more destination syncs failed: %w", errors.Join(destinationErrors...))
+	}
+
+	if s.syncState != nil && *s.conf.Mode != appconfig.SyncModeDryRun {
+		if err := s.syncState.Commit(); err != nil {
+			return fmt.Errorf("failure advancing persistent sync state: %w", err)
+		}
+		s.logger.Info("persistent sync state advanced after successful destinations")
 	}
 
 	s.logger.Info("sync completed")
@@ -334,7 +347,7 @@ func (s *Syncer) syncRatings(ctx context.Context) error {
 		s.logger.Info("skipping ratings sync")
 		return nil
 	}
-	diff := itemsDifference(s.user.imdbRatings, s.user.traktRatings)
+	diff := s.ratingDiff()
 	if len(diff.Add) > 0 {
 		if *s.conf.Mode == appconfig.SyncModeDryRun {
 			s.logger.Info("sync would have added trakt ratings", "count", len(diff.Add))
@@ -380,15 +393,23 @@ func (s *Syncer) syncTMDbRatings(ctx context.Context) error {
 		return nil
 	}
 	if *s.conf.Mode == appconfig.SyncModeDryRun {
-		s.logger.Info(
-			"sync would compare imdb ratings against tmdb api",
-			"count", len(s.user.imdbRatings),
-			"bytes", len(data),
-		)
+		if s.syncState != nil {
+			delta := s.syncState.Delta()
+			s.logger.Info(
+				"sync would process imdb ratings source delta for tmdb",
+				"bootstrap", s.syncState.Bootstrap(),
+				"full_reconciliation", s.syncState.FullReconciliation(),
+				"add", len(delta.Add),
+				"update", len(delta.Update),
+				"remove", len(delta.Remove),
+			)
+		} else {
+			s.logger.Info("sync would compare imdb ratings against tmdb api", "count", len(s.user.imdbRatings), "bytes", len(data))
+		}
 		return nil
 	}
 
-	if err := tmdb.ImportRatings(ctx, &s.tmdbConf, s.tmdbBrowser, s.logger, data); err != nil {
+	if err := tmdb.ImportRatings(ctx, &s.tmdbConf, s.tmdbBrowser, s.logger, data, s.syncState, *s.conf.Mode); err != nil {
 		return fmt.Errorf("failure syncing imdb ratings to tmdb: %w", err)
 	}
 	return nil
@@ -403,7 +424,7 @@ func (s *Syncer) syncHistory(ctx context.Context) error {
 		s.logger.Info("skipping history sync")
 		return nil
 	}
-	diff := itemsDifference(s.user.imdbRatings, s.user.traktRatings)
+	diff := s.ratingDiff()
 	if len(diff.Add) > 0 {
 		var historyToAdd trakt.Items
 		for i := range diff.Add {
