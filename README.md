@@ -19,11 +19,6 @@ IMDb is the source of truth. Changes made directly on Trakt or TMDb are not writ
 
 # Configuration
 
-> [!IMPORTANT]
-> Trakt API app creation now requires Trakt VIP access. See the upstream [VIP detail / issue #107](https://github.com/cecobask/imdb-trakt-sync/issues/107).
-
-# Configuration
-
 <table>
     <tr>
         <th>FIELD NAME</th>
