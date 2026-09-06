@@ -7,12 +7,13 @@
 
 <img src="./assets/logo.png" alt="logo"/>
 
-Command line application that can sync [IMDb](https://www.imdb.com/) and [Trakt](https://trakt.tv/dashboard) user data - watchlist, lists, ratings and history.  
-To achieve its goals the application is using the [Trakt API](https://trakt.docs.apiary.io/) and web scraping.  
-Keep in mind that this application is performing one-way sync from IMDb to Trakt. This means that any changes made on IMDb will be reflected on Trakt, but not the other way around.
+Command line application that can sync [IMDb](https://www.imdb.com/) to both [Trakt](https://trakt.tv/dashboard) user and [TMDB](https://www.themoviedb.org) data - watchlist, lists, (primarily) ratings and history.
 
-> [!IMPORTANT]
-> On July 30, 2026 Trakt made API app creation a VIP-only feature (see [#107](https://github.com/cecobask/imdb-trakt-sync/issues/107)). As such, I won't be maintaining this project anymore.
+Keep in mind that this application is performing one-way sync from IMDb to Trakt and TMDB.. This means that any changes made on IMDb will be reflected on Trakt, but not the other way around.
+
+[!IMPORTANT]
+TRAKT is using the [Trakt API](https://trakt.docs.apiary.io/) now requiring VIP-only access to develop and deploy API development applications per [VIP Detail](https://github.com/cecobask/imdb-trakt-sync/issues/107).
+
 
 # Configuration
 
