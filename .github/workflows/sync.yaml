@@ -6,6 +6,8 @@ on:
   schedule:
   - cron: "0 */12 * * *"
   workflow_dispatch:
+permissions:
+  contents: write
 env:
   ITS_IMDB_AUTH: ${{ secrets.IMDB_AUTH }}
   ITS_IMDB_EMAIL: ${{ secrets.IMDB_EMAIL }}
@@ -42,7 +44,6 @@ jobs:
         ref: sync-state
         path: sync-state
         sparse-checkout: state
-        token: ${{ secrets.GH_PAT }}
     - name: Install Google Chrome
       run: |
         wget -q https://storage.googleapis.com/chromium-browser-snapshots/Linux_x64/1321438/chrome-linux.zip
