@@ -9,6 +9,7 @@ import (
 	appconfig "github.com/cecobask/imdb-trakt-sync/internal/config"
 	"github.com/cecobask/imdb-trakt-sync/internal/imdb"
 	"github.com/cecobask/imdb-trakt-sync/internal/logger"
+	"github.com/cecobask/imdb-trakt-sync/internal/tmdb"
 	"github.com/cecobask/imdb-trakt-sync/internal/trakt"
 )
 
@@ -19,6 +20,8 @@ type Syncer struct {
 	user        *user
 	conf        appconfig.Sync
 	authless    bool
+	tmdbConf    appconfig.TMDb
+	tmdbBrowser tmdb.BrowserOptions
 }
 
 type user struct {
@@ -45,6 +48,12 @@ func NewSyncer(ctx context.Context, conf *appconfig.Config) (*Syncer, error) {
 		user:        &user{},
 		conf:        conf.Sync,
 		authless:    *conf.IMDb.Auth == appconfig.IMDbAuthMethodNone,
+		tmdbConf:    conf.TMDb,
+		tmdbBrowser: tmdb.BrowserOptions{
+			BrowserPath: *conf.IMDb.BrowserPath,
+			Headless:    *conf.IMDb.Headless,
+			Trace:       *conf.IMDb.Trace,
+		},
 	}
 	if *conf.Sync.Ratings {
 		syncer.user.imdbRatings = make(map[string]imdb.Item)
@@ -76,6 +85,10 @@ func (s *Syncer) Sync(ctx context.Context) error {
 	}
 	if err := s.syncHistory(ctx); err != nil {
 		s.logger.Error("failure syncing history", logger.Error(err))
+		return err
+	}
+	if err := s.syncTMDbRatings(ctx); err != nil {
+		s.logger.Error("failure importing imdb ratings to tmdb", logger.Error(err))
 		return err
 	}
 	s.logger.Info("sync completed")
@@ -286,6 +299,40 @@ func (s *Syncer) syncRatings(ctx context.Context) error {
 		}
 	} else {
 		s.logger.Info("no trakt ratings to remove")
+	}
+	return nil
+}
+
+func (s *Syncer) syncTMDbRatings(ctx context.Context) error {
+	if s.tmdbConf.Enabled == nil || !*s.tmdbConf.Enabled {
+		s.logger.Info("skipping tmdb ratings import")
+		return nil
+	}
+	if s.authless {
+		s.logger.Info("skipping tmdb ratings import since no imdb auth was provided")
+		return nil
+	}
+	if !*s.conf.Ratings {
+		s.logger.Info("skipping tmdb ratings import since ratings sync is disabled")
+		return nil
+	}
+
+	data := s.imdbClient.RatingsCSV()
+	if len(data) == 0 {
+		s.logger.Info("skipping tmdb ratings import since no imdb ratings csv was downloaded")
+		return nil
+	}
+	if *s.conf.Mode == appconfig.SyncModeDryRun {
+		s.logger.Info(
+			"sync would have submitted imdb ratings csv to tmdb native importer",
+			"count", len(s.user.imdbRatings),
+			"bytes", len(data),
+		)
+		return nil
+	}
+
+	if err := tmdb.ImportRatings(ctx, &s.tmdbConf, s.tmdbBrowser, s.logger, data); err != nil {
+		return fmt.Errorf("failure importing imdb ratings to tmdb: %w", err)
 	}
 	return nil
 }
