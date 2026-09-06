@@ -201,6 +201,7 @@ func (c *Config) checkDummies() error {
 					if match := slices.Contains(dummyValues(), str); match {
 						return fmt.Errorf("field '%s' contains dummy value '%s'", k, str)
 					}
+				}
 			}
 		}
 	}
