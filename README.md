@@ -5,15 +5,17 @@
 
 # imdb-trakt-sync
 
-<img src="./assets/logo.png" alt="logo"/>
+<img src="./assets/logo.svg" alt="IMDb to Trakt and TMDb" width="760"/>
 
-Command line application that can sync [IMDb](https://www.imdb.com/) to both [Trakt](https://trakt.tv/dashboard) user and [TMDB](https://www.themoviedb.org) data - watchlist, lists, (primarily) ratings and history.
+Command-line application for one-way synchronization from [IMDb](https://www.imdb.com/) to two destinations:
 
-Keep in mind that this application is performing one-way sync from IMDb to Trakt and TMDB.. This means that any changes made on IMDb will be reflected on Trakt, but not the other way around.
+- **[Trakt](https://trakt.tv/dashboard):** watchlist, lists, ratings, and rating-derived history.
+- **[TMDb](https://www.themoviedb.org):** ratings only, using the TMDb API when the optional TMDb destination is enabled.
 
-[!IMPORTANT]
-TRAKT is using the [Trakt API](https://trakt.docs.apiary.io/) now requiring VIP-only access to develop and deploy API development applications per [VIP Detail](https://github.com/cecobask/imdb-trakt-sync/issues/107).
+IMDb is the source of truth. Changes made directly on Trakt or TMDb are not written back to IMDb. Destination removals depend on `SYNC_MODE`.
 
+> [!IMPORTANT]
+> Trakt API app creation now requires Trakt VIP access. See the upstream [VIP detail / issue #107](https://github.com/cecobask/imdb-trakt-sync/issues/107).
 
 # Configuration
 
@@ -36,9 +38,9 @@ TRAKT is using the [Trakt API](https://trakt.docs.apiary.io/) now requiring VIP-
         </td>
         <td>
             Authentication method to be used for IMDb:<br />
-            <code>credentials</code> => IMDB_EMAIL + IMDB_PASSWORD fields required<br />
-            <code>cookies</code> => IMDB_COOKIEATMAIN field required<br />
-            <code>none</code> => IMDB_LISTS field required
+            <code>credentials</code> =&gt; IMDB_EMAIL + IMDB_PASSWORD fields required<br />
+            <code>cookies</code> =&gt; IMDB_COOKIEATMAIN field required<br />
+            <code>none</code> =&gt; IMDB_LISTS field required
         </td>
     </tr>
     <tr>
@@ -46,14 +48,14 @@ TRAKT is using the [Trakt API](https://trakt.docs.apiary.io/) now requiring VIP-
         <td>secret</td>
         <td>-</td>
         <td>-</td>
-        <td>IMDb account email address. Only required when IMDB_AUTH => <code>credentials</code></td>
+        <td>IMDb account email address. Only required when IMDB_AUTH =&gt; <code>credentials</code></td>
     </tr>
     <tr>
         <td>IMDB_PASSWORD</td>
         <td>secret</td>
         <td>-</td>
         <td>-</td>
-        <td>IMDb account password. Only required when IMDB_AUTH => <code>credentials</code></td>
+        <td>IMDb account password. Only required when IMDB_AUTH =&gt; <code>credentials</code></td>
     </tr>
     <tr>
         <td>IMDB_COOKIEATMAIN</td>
@@ -61,7 +63,7 @@ TRAKT is using the [Trakt API](https://trakt.docs.apiary.io/) now requiring VIP-
         <td>-</td>
         <td>-</td>
         <td>
-            Cookie value only required when IMDB_AUTH => <code>cookies</code>. Get the following cookie information from
+            Cookie value only required when IMDB_AUTH =&gt; <code>cookies</code>. Get the following cookie information from
             your browser:<br />
             <code>name: at-main | domain: .imdb.com</code>
         </td>
@@ -74,9 +76,9 @@ TRAKT is using the [Trakt API](https://trakt.docs.apiary.io/) now requiring VIP-
         <td>
             Array of IMDb list IDs that you would like synced to Trakt. If this array is not specified or empty, all
             IMDb lists on your account will be synced to Trakt. In order to get the ID of an IMDb list, open it from a
-            browser - the ID is in the URL with format <code>ls#########</code>. If provided as GitHub secret or
-            environment variable, define its values as comma-separated list. Keep in mind the <a
-                href="https://forums.trakt.tv/t/personal-list-updates/10170#limits-3">Trakt list limits</a>!
+            browser - the ID is in the URL with format <code>ls#########</code>. If provided as a GitHub secret or
+            environment variable, define its values as a comma-separated list. Keep in mind the <a
+                href="https://forums.trakt.tv/t/personal-list-updates/10170#limits-3">Trakt list limits</a>.
         </td>
     </tr>
     <tr>
@@ -87,8 +89,8 @@ TRAKT is using the [Trakt API](https://trakt.docs.apiary.io/) now requiring VIP-
         <td>
             Array of IMDb list IDs that you do <b>NOT</b> want synced to Trakt. This is useful if you would like to
             sync all your lists, but ignore some. In order to get the ID of an IMDb list, open it from a browser - the
-            ID is in the URL with format <code>ls#########</code>. If provided as GitHub secret or environment variable,
-            define its values as comma-separated list.
+            ID is in the URL with format <code>ls#########</code>. If provided as a GitHub secret or environment variable,
+            define its values as a comma-separated list.
         </td>
     </tr>
     <tr>
@@ -99,7 +101,7 @@ TRAKT is using the [Trakt API](https://trakt.docs.apiary.io/) now requiring VIP-
             true<br />
             false
         </td>
-        <td>Print tracing logs related to browser activities. Can be useful for debugging purposes</td>
+        <td>Print tracing logs related to browser activity. Useful for debugging.</td>
     </tr>
     <tr>
         <td>IMDB_HEADLESS</td>
@@ -109,9 +111,7 @@ TRAKT is using the [Trakt API](https://trakt.docs.apiary.io/) now requiring VIP-
             true<br />
             false
         </td>
-        <td>
-            Whether to run the browser in headless mode or not. Only set this to false when running the syncer locally
-        </td>
+        <td>Whether to run the IMDb browser in headless mode. Set to false only when running locally and you need to see the browser.</td>
     </tr>
     <tr>
         <td>IMDB_BROWSERPATH</td>
@@ -119,8 +119,7 @@ TRAKT is using the [Trakt API](https://trakt.docs.apiary.io/) now requiring VIP-
         <td>-</td>
         <td>-</td>
         <td>
-            The location of your preferred web browser. If you leave this value empty, the syncer will attempt to lookup
-            common browser locations. You can optionally override its value to use a specific browser
+            Optional path to a preferred browser executable. If empty, the application attempts to locate a supported browser.
         </td>
     </tr>
     <tr>
@@ -133,12 +132,10 @@ TRAKT is using the [Trakt API](https://trakt.docs.apiary.io/) now requiring VIP-
             dry-run
         </td>
         <td>
-            Sync mode to be used when running the application:<br />
-            <code>full</code> => add Trakt items that don't exist, delete Trakt items that don't exist on IMDb,
-            update<br />
-            Trakt items by treating IMDb as the source of truth<br />
-            <code>add-only</code> => add Trakt items that do not exist, but do not delete anything<br />
-            <code>dry-run</code> => identify what Trakt items would be added / deleted / updated
+            Sync mode used by the destinations:<br />
+            <code>full</code> =&gt; add/update destination data and remove destination data no longer present on IMDb where supported<br />
+            <code>add-only</code> =&gt; add/update without destination removals<br />
+            <code>dry-run</code> =&gt; report planned changes without writing them
         </td>
     </tr>
     <tr>
@@ -149,7 +146,7 @@ TRAKT is using the [Trakt API](https://trakt.docs.apiary.io/) now requiring VIP-
             true<br />
             false
         </td>
-        <td>Whether to sync history or not. When IMDB_AUTH => <code>none</code>, history sync will be skipped</td>
+        <td>Whether to sync rating-derived history to Trakt. When IMDB_AUTH =&gt; <code>none</code>, history sync is skipped.</td>
     </tr>
     <tr>
         <td>SYNC_RATINGS</td>
@@ -159,7 +156,7 @@ TRAKT is using the [Trakt API](https://trakt.docs.apiary.io/) now requiring VIP-
             true<br />
             false
         </td>
-        <td>Whether to sync ratings or not. When IMDB_AUTH => <code>none</code>, ratings sync will be skipped</td>
+        <td>Whether to sync ratings. When false, both Trakt ratings sync and the optional TMDb ratings destination are skipped.</td>
     </tr>
     <tr>
         <td>SYNC_WATCHLIST</td>
@@ -169,7 +166,7 @@ TRAKT is using the [Trakt API](https://trakt.docs.apiary.io/) now requiring VIP-
             true<br />
             false
         </td>
-        <td>Whether to sync watchlist or not. When IMDB_AUTH => <code>none</code>, watchlist sync will be skipped</td>
+        <td>Whether to sync the IMDb watchlist to Trakt. When IMDB_AUTH =&gt; <code>none</code>, watchlist sync is skipped.</td>
     </tr>
     <tr>
         <td>SYNC_LISTS</td>
@@ -179,7 +176,7 @@ TRAKT is using the [Trakt API](https://trakt.docs.apiary.io/) now requiring VIP-
             true<br />
             false
         </td>
-        <td>Whether to sync lists or not. This provides the option to disable syncing of lists</td>
+        <td>Whether to sync IMDb lists to Trakt.</td>
     </tr>
     <tr>
         <td>SYNC_TIMEOUT</td>
@@ -187,8 +184,8 @@ TRAKT is using the [Trakt API](https://trakt.docs.apiary.io/) now requiring VIP-
         <td>15m</td>
         <td>-</td>
         <td>
-            Maximum duration to run the syncer. Users with large libraries might have to increase the timeout value
-            accordingly. Valid time units are: ns, us (or µs), ms, s, m, h
+            Maximum duration to run the syncer. Users with large libraries might have to increase the timeout value.
+            Valid time units are: ns, us (or µs), ms, s, m, h.
         </td>
     </tr>
     <tr>
@@ -196,14 +193,14 @@ TRAKT is using the [Trakt API](https://trakt.docs.apiary.io/) now requiring VIP-
         <td>secret</td>
         <td>-</td>
         <td>-</td>
-        <td>Trakt app client ID</td>
+        <td>Trakt app client ID.</td>
     </tr>
     <tr>
         <td>TRAKT_CLIENTSECRET</td>
         <td>secret</td>
         <td>-</td>
         <td>-</td>
-        <td>Trakt app client secret</td>
+        <td>Trakt app client secret.</td>
     </tr>
     <tr>
         <td>TRAKT_TOKENFILE</td>
@@ -211,80 +208,127 @@ TRAKT is using the [Trakt API](https://trakt.docs.apiary.io/) now requiring VIP-
         <td>trakt-token.json</td>
         <td>-</td>
         <td>
-            Path to the file used to store the Trakt access/refresh tokens. Created automatically the first time the
-            application authorizes with Trakt (see <a href="#usage">Usage</a>) and kept up to date automatically
-            afterwards
+            Path used to store Trakt access/refresh tokens. Created automatically after first authorization and kept up to date afterwards.
         </td>
+    </tr>
+    <tr>
+        <td>TMDB_ENABLED</td>
+        <td>variable</td>
+        <td>false</td>
+        <td>
+            true<br />
+            false
+        </td>
+        <td>
+            Enables the optional TMDb ratings destination. Requires authenticated IMDb ratings access, <code>SYNC_RATINGS=true</code>,
+            <code>TMDB_READACCESSTOKEN</code>, and <code>TMDB_SESSIONID</code>.
+        </td>
+    </tr>
+    <tr>
+        <td>TMDB_READACCESSTOKEN</td>
+        <td>secret</td>
+        <td>-</td>
+        <td>-</td>
+        <td>TMDb API Read Access Token used to authenticate API requests. Required when <code>TMDB_ENABLED=true</code>.</td>
+    </tr>
+    <tr>
+        <td>TMDB_SESSIONID</td>
+        <td>secret</td>
+        <td>-</td>
+        <td>-</td>
+        <td>Authenticated TMDb session ID for the account receiving rating changes. Required when <code>TMDB_ENABLED=true</code>.</td>
     </tr>
 </table>
 
-Trakt no longer supports signing in with an email and password from third-party applications - the application
-authorizes using Trakt's [device code flow](https://docs.trakt.tv/reference/authentication#device-code-flow) instead.
-The first time the application runs without an existing token file, it prints a verification URL and a code.
+## Trakt authentication
 
-Open the URL in any browser, sign in however you normally would (Google, Apple, or an email sign-in link), and enter
-the code. The application polls in the background and, once approved, saves the resulting tokens to `TRAKT_TOKENFILE`
-so subsequent runs don't need to repeat this manual step. Once the access token expires, the refresh token will be
-used to generate a fresh pair of auth tokens.
+Trakt no longer supports signing in with an email and password from third-party applications. The application authorizes using Trakt's [device code flow](https://docs.trakt.tv/reference/authentication#device-code-flow) instead.
+
+The first time the application runs without an existing token file, it prints a verification URL and a code. Open the URL in any browser, sign in however you normally would, and enter the code. The application polls in the background and, once approved, saves the resulting tokens to `TRAKT_TOKENFILE`. When the access token expires, the refresh token is used to generate a fresh token pair.
+
+## TMDb ratings destination
+
+TMDb support is optional and disabled by default. It synchronizes **ratings only**; TMDb watchlists, lists, and history are not modified.
+
+The TMDb implementation uses the API to map IMDb title IDs to TMDb targets and write ratings to the authenticated TMDb account. To enable it, provide:
+
+- `TMDB_ENABLED=true`
+- `TMDB_READACCESSTOKEN` - your TMDb API Read Access Token
+- `TMDB_SESSIONID` - a valid authenticated TMDb session ID for the same account
+
+Treat both credential values as secrets and never commit them to the repository.
+
+`SYNC_MODE=dry-run` performs no TMDb writes. `add-only` does not remove TMDb ratings. `full` may remove destination ratings that are no longer present in the IMDb source when reconciliation identifies them.
+
+When persistent sync state is in bootstrap mode, the current IMDb ratings snapshot becomes the baseline after successful destinations; TMDb rating writes are skipped for that bootstrap snapshot and subsequent runs process changes from the baseline.
 
 # Usage
 
-The application can be setup to run automatically, based on a custom schedule (_default: once every 12 hours_) using **GitHub Actions**, in a container, or locally on your machine.  
-Workflow schedules can be tweaked by editing the [.github/workflows/sync.yaml](.github/workflows/sync.yaml) file and committing the changes.  
-Please configure the application to suits your needs, by referring to the [Configuration](#configuration) section, before running it.  
-Follow the relevant section below, based on how you want to use the application.
+The application can run automatically on a custom schedule (_default: once every 12 hours_) using **GitHub Actions**, in a container, or locally. Workflow schedules can be changed in [.github/workflows/sync.yaml](.github/workflows/sync.yaml).
+
+Configure the application for your environment using the [Configuration](#configuration) section before running it.
 
 ## Run the application using GitHub Actions
 
-1. [Fork the repository](https://github.com/cecobask/imdb-trakt-sync/fork) to your account
-2. Create a [Trakt App](https://trakt.tv/oauth/applications). Use **urn:ietf:wg:oauth:2.0:oob** as redirect uri
-3. Configure the application in your fork (see [Configuration](#configuration)):
-   - Create an individual repository secret/variable for each [Configuration](#configuration) field you need: `Settings` > `Secrets and variables` > `Actions`
-   - Create a `GH_PAT` repository secret (see [Creating the GH_PAT secret](#creating-the-gh_pat-secret))
-4. Allow GitHub Actions on your fork repository: `Settings` > `Actions` > `General` > `Allow all actions and reusable workflows`
-5. Enable the **sync** workflow: `Actions` > `Workflows` > `sync` > `Enable workflow`
-6. Run the **sync** workflow manually: `Actions` > `Workflows` > `sync` > `Run workflow`
-7. From now on, GitHub Actions will automatically trigger the **sync** workflow based on your schedule
+1. [Fork this repository](https://github.com/scottia/imdb-trakt-sync/fork) to your account.
+2. Create a [Trakt App](https://trakt.tv/oauth/applications). Use **urn:ietf:wg:oauth:2.0:oob** as the redirect URI.
+3. Configure the application in your fork: `Settings` > `Secrets and variables` > `Actions`.
+   - The current workflow reads its configuration from **repository secrets**.
+   - Create the IMDb/Trakt secrets referenced in [.github/workflows/sync.yaml](.github/workflows/sync.yaml) for the features you use.
+   - Create a `GH_PAT` repository secret so rotated Trakt tokens can be persisted (see [Creating the GH_PAT secret](#creating-the-gh_pat-secret)).
+   - To enable TMDb ratings, create these additional repository secrets:
+     - `TMDB_ENABLED` = `true`
+     - `TMDB_READ_ACCESS_TOKEN` = your TMDb API Read Access Token
+     - `TMDB_SESSION_ID` = your authenticated TMDb session ID
+4. Allow GitHub Actions on your fork: `Settings` > `Actions` > `General` > `Allow all actions and reusable workflows`.
+5. Enable the **sync** workflow: `Actions` > `Workflows` > `sync` > `Enable workflow`.
+6. Run the **sync** workflow manually: `Actions` > `Workflows` > `sync` > `Run workflow`.
+7. From then on, GitHub Actions automatically triggers the **sync** workflow based on your schedule.
+
+The workflow maps the TMDb repository secrets to the application environment as follows:
+
+- `TMDB_ENABLED` -> `ITS_TMDB_ENABLED`
+- `TMDB_READ_ACCESS_TOKEN` -> `ITS_TMDB_READACCESSTOKEN`
+- `TMDB_SESSION_ID` -> `ITS_TMDB_SESSIONID`
 
 ### Creating the GH_PAT secret
 
-The **sync** workflow needs to overwrite the `TRAKT_TOKEN` repository secret any time new pair of Trakt auth tokens
-are generated. The default `GITHUB_TOKEN` that Actions provides automatically cannot modify repository secrets, so
-a personal access token (PAT) with that specific permission is needed instead. A fine-grained token scoped to just
-this repository and just this permission is recommended over a classic token:
+The **sync** workflow needs to overwrite the `TRAKT_TOKEN` repository secret whenever a new Trakt token pair is generated. The default `GITHUB_TOKEN` cannot modify repository secrets, so a personal access token with that permission is required.
 
-1. Go to [Fine-grained tokens](https://github.com/settings/personal-access-tokens/new)
-2. Give your token a name (e.g. `imdb-trakt-sync`) and an expiration
-3. Under `Repository access` choose `Only select repositories` and pick your `imdb-trakt-sync` fork
-4. Click `Add permissions` and select **Secrets** with `Read and write` access
-5. Click `Generate token` and ensure you copy its value
-6. Create a new repository secret called `GH_PAT` in your fork and set its value to the copied token
+A fine-grained token scoped to this repository and this permission is recommended:
+
+1. Go to [Fine-grained tokens](https://github.com/settings/personal-access-tokens/new).
+2. Give the token a name (for example, `imdb-trakt-sync`) and an expiration.
+3. Under `Repository access`, choose `Only select repositories` and select your `imdb-trakt-sync` fork.
+4. Click `Add permissions` and select **Secrets** with `Read and write` access.
+5. Generate the token and copy its value.
+6. Create a repository secret named `GH_PAT` in your fork and set it to that value.
 
 ## Run the application in a Docker container
 
-1. Install [Docker](https://www.docker.com/get-started)
-2. Clone the repository: `git clone git@github.com:cecobask/imdb-trakt-sync.git`
-3. Create a [Trakt App](https://trakt.tv/oauth/applications). Use **urn:ietf:wg:oauth:2.0:oob** as redirect uri
+1. Install [Docker](https://www.docker.com/get-started).
+2. Clone the repository: `git clone git@github.com:scottia/imdb-trakt-sync.git`.
+3. Create a [Trakt App](https://trakt.tv/oauth/applications). Use **urn:ietf:wg:oauth:2.0:oob** as the redirect URI.
 4. Configure the application:
-   - Create `.env` file with the same contents as [.env.example](.env.example)
-   - Populate the `.env` file with your own secret values
-   - All secret keys should have `ITS_` prefix
-5. Open a terminal window in the repository folder and then:
-   - Build a Docker image: `make package`
-   - Run the sync workflow in a Docker container: `make sync-container`
-   - The first run prints a Trakt verification URL and code - open it in a browser and approve it (see
-     [Configuration](#configuration)). The resulting token is persisted to `trakt-token.json` on the host via a
-     mounted volume, so later runs of `make sync-container` reuse it without prompting again
+   - Create a `.env` file using [.env.example](.env.example) as the starting point.
+   - Populate it with your own values. Environment keys use the `ITS_` prefix.
+   - If enabling TMDb ratings, also add:
+     - `ITS_TMDB_ENABLED=true`
+     - `ITS_TMDB_READACCESSTOKEN=<your TMDb API Read Access Token>`
+     - `ITS_TMDB_SESSIONID=<your TMDb session ID>`
+5. Open a terminal in the repository folder and:
+   - Build a Docker image: `make package`.
+   - Run the sync workflow in a Docker container: `make sync-container`.
+   - On the first Trakt authorization, open the verification URL printed by the application and approve the displayed code. The resulting Trakt token is persisted to `trakt-token.json` on the host through the mounted volume.
 
 ## Run the application locally
 
-1. Install [Git](https://git-scm.com/downloads) and [Go](https://go.dev/doc/install)
-2. Clone the repository: `git clone git@github.com:cecobask/imdb-trakt-sync.git`
-3. Create a [Trakt App](https://trakt.tv/oauth/applications). Use **urn:ietf:wg:oauth:2.0:oob** as redirect uri
-4. Open a terminal window in the repository folder and then:
-   - Build the syncer: `make build`
-   - Configure the syncer: `make configure`
-   - Run the syncer: `make sync`
-   - The first run prints a Trakt verification URL and code - open it in a browser and approve it (see
-     [Configuration](#configuration)). The resulting token is saved to `trakt-token.json`, so later runs reuse it
-     without prompting again
+1. Install [Git](https://git-scm.com/downloads) and [Go](https://go.dev/doc/install).
+2. Clone the repository: `git clone git@github.com:scottia/imdb-trakt-sync.git`.
+3. Create a [Trakt App](https://trakt.tv/oauth/applications). Use **urn:ietf:wg:oauth:2.0:oob** as the redirect URI.
+4. Configure and run the application:
+   - Build: `make build`.
+   - Configure: `make configure`.
+   - Run: `make sync`.
+   - On the first Trakt authorization, approve the printed verification URL/code. The resulting token is saved to `trakt-token.json`.
+   - If enabling TMDb through environment variables, set `ITS_TMDB_ENABLED`, `ITS_TMDB_READACCESSTOKEN`, and `ITS_TMDB_SESSIONID` before running.
