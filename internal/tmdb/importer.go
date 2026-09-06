@@ -1,250 +1,432 @@
 package tmdb
 
 import (
+	"bytes"
 	"context"
+	"encoding/csv"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
-	"os"
-	"path/filepath"
+	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	appconfig "github.com/cecobask/imdb-trakt-sync/internal/config"
-	"github.com/go-rod/rod"
-	"github.com/go-rod/rod/lib/launcher"
-	"github.com/go-rod/rod/lib/proto"
 )
 
-const (
-	baseURL           = "https://www.themoviedb.org"
-	importURL         = baseURL + "/settings/import-list"
-	cookieDomain      = ".themoviedb.org"
-	selectorFileInput = "input[type='file']"
-)
+const apiBaseURL = "https://api.themoviedb.org/3"
 
+// BrowserOptions is retained for compatibility with the existing syncer
+// constructor. The API-backed TMDb importer does not launch a browser.
 type BrowserOptions struct {
 	BrowserPath string
 	Headless    bool
 	Trace       bool
 }
 
-// ImportRatings submits the original IMDb ratings CSV to TMDb's native
-// Settings -> Import List workflow. It intentionally performs no TMDb-ID
-// resolution and no OMDb/API fallback.
+type rating struct {
+	IMDbID string
+	Kind   string
+	Value  float64
+}
+
+type findResult struct {
+	ID            int `json:"id"`
+	ShowID        int `json:"show_id"`
+	SeasonNumber  int `json:"season_number"`
+	EpisodeNumber int `json:"episode_number"`
+}
+
+type findResponse struct {
+	MovieResults     []findResult `json:"movie_results"`
+	TVResults        []findResult `json:"tv_results"`
+	TVEpisodeResults []findResult `json:"tv_episode_results"`
+}
+
+type target struct {
+	kind          string
+	id            int
+	showID        int
+	seasonNumber  int
+	episodeNumber int
+}
+
+type apiClient struct {
+	baseURL    string
+	readToken  string
+	sessionID  string
+	httpClient *http.Client
+	logger     *slog.Logger
+}
+
 func ImportRatings(
 	ctx context.Context,
 	conf *appconfig.TMDb,
-	browserOptions BrowserOptions,
+	_ BrowserOptions,
 	logger *slog.Logger,
 	data []byte,
 ) error {
 	if conf == nil || conf.Enabled == nil || !*conf.Enabled {
 		return nil
 	}
-	if conf.Cookie == nil || strings.TrimSpace(*conf.Cookie) == "" {
-		return fmt.Errorf("tmdb cookie must not be empty")
+	if conf.ReadAccessToken == nil || strings.TrimSpace(*conf.ReadAccessToken) == "" {
+		return fmt.Errorf("tmdb read access token must not be empty")
+	}
+	if conf.SessionID == nil || strings.TrimSpace(*conf.SessionID) == "" {
+		return fmt.Errorf("tmdb session id must not be empty")
 	}
 	if len(data) == 0 {
 		return fmt.Errorf("imdb ratings csv must not be empty")
 	}
 
-	cookies, err := parseCookieHeader(*conf.Cookie)
+	ratings, err := parseRatingsCSV(data)
 	if err != nil {
-		return fmt.Errorf("failure parsing tmdb cookie header: %w", err)
+		return fmt.Errorf("failure parsing imdb ratings csv for tmdb api sync: %w", err)
+	}
+	if len(ratings) == 0 {
+		logger.Info("no imdb ratings to sync to tmdb api")
+		return nil
 	}
 
-	browser, err := launchBrowser(ctx, browserOptions)
-	if err != nil {
-		return err
+	client := &apiClient{
+		baseURL:   apiBaseURL,
+		readToken: strings.TrimSpace(*conf.ReadAccessToken),
+		sessionID: strings.TrimSpace(*conf.SessionID),
+		httpClient: &http.Client{
+			Timeout: 20 * time.Second,
+		},
+		logger: logger,
 	}
-	defer func() {
-		if closeErr := browser.Close(); closeErr != nil {
-			logger.Warn("failure closing tmdb browser", "error", closeErr)
+	if err := client.validateSession(ctx); err != nil {
+		return fmt.Errorf("failure validating tmdb api session: %w", err)
+	}
+
+	var failures []string
+	succeeded := 0
+	for i, item := range ratings {
+		if item.Value < 0.5 || item.Value > 10 {
+			failures = append(failures, fmt.Sprintf("%s: rating %.1f is outside tmdb range 0.5-10", item.IMDbID, item.Value))
+			continue
 		}
-	}()
 
-	if err := browser.SetCookies(cookies); err != nil {
-		return fmt.Errorf("failure setting tmdb browser cookies: %w", err)
+		resolved, err := client.findByIMDbID(ctx, item)
+		if err != nil {
+			failures = append(failures, fmt.Sprintf("%s: %v", item.IMDbID, err))
+			continue
+		}
+		if err := client.addRating(ctx, resolved, item.Value); err != nil {
+			failures = append(failures, fmt.Sprintf("%s: %v", item.IMDbID, err))
+			continue
+		}
+		succeeded++
+
+		if (i+1)%50 == 0 || i+1 == len(ratings) {
+			logger.Info(
+				"tmdb api ratings progress",
+				"processed", i+1,
+				"total", len(ratings),
+				"succeeded", succeeded,
+				"failed", len(failures),
+			)
+		}
 	}
 
-	page, err := browser.Page(proto.TargetCreateTarget{URL: importURL})
-	if err != nil {
-		return fmt.Errorf("failure opening tmdb import page: %w", err)
-	}
-	if err := page.WaitLoad(); err != nil {
-		return fmt.Errorf("failure waiting for tmdb import page: %w", err)
-	}
-
-	info, err := page.Info()
-	if err != nil {
-		return fmt.Errorf("failure reading tmdb import page info: %w", err)
-	}
-	if strings.Contains(strings.ToLower(info.URL), "/login") {
-		return fmt.Errorf("tmdb authentication failed: import page redirected to login")
-	}
-
-	fileInput, err := page.Timeout(20 * time.Second).Element(selectorFileInput)
-	if err != nil {
+	if len(failures) > 0 {
+		for _, failure := range failures {
+			logger.Warn("tmdb api rating failed", "item", failure)
+		}
 		return fmt.Errorf(
-			"failure finding tmdb import file input; tmdb authentication may have expired or the import page changed: %w",
-			err,
+			"tmdb api ratings sync completed with %d failures out of %d",
+			len(failures),
+			len(ratings),
 		)
 	}
 
-	tempDir, err := os.MkdirTemp("", "imdb-tmdb-import-*")
-	if err != nil {
-		return fmt.Errorf("failure creating temporary tmdb import directory: %w", err)
-	}
-	defer func() {
-		if removeErr := os.RemoveAll(tempDir); removeErr != nil {
-			logger.Warn("failure removing temporary tmdb import directory", "error", removeErr)
-		}
-	}()
-
-	// Keep the same basename used by IMDb's ratings export. The bytes are written
-	// unchanged; TMDb receives the original IMDb CSV rather than a reconstructed file.
-	csvPath := filepath.Join(tempDir, "ratings.csv")
-	if err := os.WriteFile(csvPath, data, 0o600); err != nil {
-		return fmt.Errorf("failure writing temporary imdb ratings csv: %w", err)
-	}
-
-	if err := fileInput.SetFiles([]string{csvPath}); err != nil {
-		return fmt.Errorf("failure attaching imdb ratings csv to tmdb import form: %w", err)
-	}
-
-	submitButton, err := findImportButton(page)
-	if err != nil {
-		return err
-	}
-
-	waitIdle := page.Timeout(30*time.Second).WaitRequestIdle(
-		750*time.Millisecond,
-		nil,
-		nil,
-		nil,
-	)
-	if err := submitButton.Click(proto.InputMouseButtonLeft, 1); err != nil {
-		return fmt.Errorf("failure submitting tmdb import form: %w", err)
-	}
-	waitIdle()
-
-	// TMDb processes imports asynchronously. At this point we verify that the
-	// submission was not immediately rejected; completion belongs to TMDb's
-	// import-history queue rather than this GitHub Actions run.
-	body, err := page.Element("body")
-	if err != nil {
-		return fmt.Errorf("failure reading tmdb response page: %w", err)
-	}
-	text, err := body.Text()
-	if err != nil {
-		return fmt.Errorf("failure reading tmdb response text: %w", err)
-	}
-	if reason := knownImportError(text); reason != "" {
-		return fmt.Errorf("tmdb rejected imdb ratings import: %s", reason)
-	}
-
-	logger.Info("submitted imdb ratings csv to tmdb native importer", "bytes", len(data))
+	logger.Info("synced imdb ratings to tmdb api", "count", succeeded)
 	return nil
 }
 
-func launchBrowser(ctx context.Context, opts BrowserOptions) (*rod.Browser, error) {
-	l := launcher.New().
-		Headless(opts.Headless).
-		Set("disable-component-update").
-		Set("disable-domain-reliability").
-		Set("disable-print-preview").
-		Set("disable-search-engine-choice-screen").
-		Set("disable-setuid-sandbox").
-		Set("hide-scrollbars").
-		Set("mute-audio").
-		Set("no-default-browser-check").
-		Set("no-pings").
-		Set("no-sandbox").
-		Set("no-zygote")
+func parseRatingsCSV(data []byte) ([]rating, error) {
+	reader := csv.NewReader(bytes.NewReader(data))
+	reader.LazyQuotes = true
+	reader.FieldsPerRecord = -1
 
-	if strings.TrimSpace(opts.BrowserPath) != "" {
-		l = l.Bin(opts.BrowserPath)
-	}
-
-	browserURL, err := l.Launch()
+	records, err := reader.ReadAll()
 	if err != nil {
-		return nil, fmt.Errorf("failure launching tmdb browser: %w", err)
+		return nil, fmt.Errorf("failure reading csv records: %w", err)
+	}
+	if len(records) == 0 {
+		return nil, fmt.Errorf("expected csv records to contain a header row")
 	}
 
-	browser := rod.New().
-		Context(ctx).
-		ControlURL(browserURL).
-		Trace(opts.Trace)
-
-	if err := browser.Connect(); err != nil {
-		return nil, fmt.Errorf("failure connecting to tmdb browser: %w", err)
-	}
-	return browser, nil
-}
-
-func parseCookieHeader(header string) ([]*proto.NetworkCookieParam, error) {
-	header = strings.TrimSpace(header)
-	if strings.HasPrefix(strings.ToLower(header), "cookie:") {
-		header = strings.TrimSpace(header[len("cookie:"):])
+	header := make(map[string]int, len(records[0]))
+	for i, name := range records[0] {
+		header[strings.TrimSpace(name)] = i
 	}
 
-	var cookies []*proto.NetworkCookieParam
-	for _, raw := range strings.Split(header, ";") {
-		raw = strings.TrimSpace(raw)
-		if raw == "" {
-			continue
+	constIdx, ok := header["Const"]
+	if !ok {
+		return nil, fmt.Errorf("missing Const column")
+	}
+	ratingIdx, ok := header["Your Rating"]
+	if !ok {
+		return nil, fmt.Errorf("missing Your Rating column")
+	}
+	kindIdx, ok := header["Title Type"]
+	if !ok {
+		return nil, fmt.Errorf("missing Title Type column")
+	}
+
+	maxIdx := constIdx
+	if ratingIdx > maxIdx {
+		maxIdx = ratingIdx
+	}
+	if kindIdx > maxIdx {
+		maxIdx = kindIdx
+	}
+
+	ratings := make([]rating, 0, len(records)-1)
+	for rowNum, record := range records[1:] {
+		if len(record) <= maxIdx {
+			return nil, fmt.Errorf("csv row %d has too few columns", rowNum+2)
 		}
-		parts := strings.SplitN(raw, "=", 2)
-		if len(parts) != 2 {
-			return nil, fmt.Errorf("invalid cookie pair %q", raw)
+		imdbID := strings.TrimSpace(record[constIdx])
+		if imdbID == "" {
+			return nil, fmt.Errorf("csv row %d has empty Const value", rowNum+2)
 		}
-		name := strings.TrimSpace(parts[0])
-		if name == "" {
-			return nil, fmt.Errorf("cookie name must not be empty")
+		value, err := strconv.ParseFloat(strings.TrimSpace(record[ratingIdx]), 64)
+		if err != nil {
+			return nil, fmt.Errorf("csv row %d has invalid rating: %w", rowNum+2, err)
 		}
-		cookies = append(cookies, &proto.NetworkCookieParam{
-			Name:   name,
-			Value:  parts[1],
-			Domain: cookieDomain,
-			Path:   "/",
-			Secure: true,
+		ratings = append(ratings, rating{
+			IMDbID: imdbID,
+			Kind:   strings.TrimSpace(record[kindIdx]),
+			Value:  value,
 		})
 	}
-	if len(cookies) == 0 {
-		return nil, fmt.Errorf("no cookies found")
-	}
-	return cookies, nil
+	return ratings, nil
 }
 
-func findImportButton(page *rod.Page) (*rod.Element, error) {
-	// Prefer the visible button whose label is exactly "Import".
-	if button, err := page.Timeout(10*time.Second).ElementR("button", `^\s*[Ii][Mm][Pp][Oo][Rr][Tt]\s*$`); err == nil {
-		return button, nil
+func (c *apiClient) validateSession(ctx context.Context) error {
+	values := url.Values{}
+	values.Set("session_id", c.sessionID)
+	_, err := c.do(ctx, http.MethodGet, "/account?"+values.Encode(), nil, http.StatusOK)
+	if err != nil {
+		return err
 	}
-
-	// Fallbacks keep this resilient to small TMDb markup changes.
-	if button, err := page.Timeout(10 * time.Second).Element("button[type='submit']"); err == nil {
-		return button, nil
-	}
-	if button, err := page.Timeout(10 * time.Second).Element("input[type='submit']"); err == nil {
-		return button, nil
-	}
-
-	return nil, fmt.Errorf("failure finding tmdb import submit button; tmdb import page markup may have changed")
+	return nil
 }
 
-func knownImportError(pageText string) string {
-	text := strings.ToLower(pageText)
-	for _, message := range []string{
-		"the file you submitted could not be mapped to one of our supported formats",
-		"could not be mapped to one of our supported formats",
-		"there was a problem importing",
-		"unable to import",
-		"invalid csv",
-	} {
-		if strings.Contains(text, message) {
-			return message
+func (c *apiClient) findByIMDbID(ctx context.Context, item rating) (target, error) {
+	values := url.Values{}
+	values.Set("external_source", "imdb_id")
+
+	body, err := c.do(
+		ctx,
+		http.MethodGet,
+		"/find/"+url.PathEscape(item.IMDbID)+"?"+values.Encode(),
+		nil,
+		http.StatusOK,
+	)
+	if err != nil {
+		return target{}, fmt.Errorf("failure resolving imdb id through tmdb find api: %w", err)
+	}
+
+	var result findResponse
+	if err := json.Unmarshal(body, &result); err != nil {
+		return target{}, fmt.Errorf("failure decoding tmdb find response: %w", err)
+	}
+
+	switch item.Kind {
+	case "Movie":
+		if len(result.MovieResults) != 1 {
+			return target{}, resolutionError(item, result)
+		}
+		return target{kind: "movie", id: result.MovieResults[0].ID}, nil
+	case "TV Series", "TV Mini Series":
+		if len(result.TVResults) != 1 {
+			return target{}, resolutionError(item, result)
+		}
+		return target{kind: "tv", id: result.TVResults[0].ID}, nil
+	case "TV Episode":
+		if len(result.TVEpisodeResults) != 1 {
+			return target{}, resolutionError(item, result)
+		}
+		episode := result.TVEpisodeResults[0]
+		return target{
+			kind:          "episode",
+			id:            episode.ID,
+			showID:        episode.ShowID,
+			seasonNumber:  episode.SeasonNumber,
+			episodeNumber: episode.EpisodeNumber,
+		}, nil
+	default:
+		return resolveSingleExactResult(item, result)
+	}
+}
+
+func resolveSingleExactResult(item rating, result findResponse) (target, error) {
+	total := len(result.MovieResults) + len(result.TVResults) + len(result.TVEpisodeResults)
+	if total != 1 {
+		return target{}, resolutionError(item, result)
+	}
+	if len(result.MovieResults) == 1 {
+		return target{kind: "movie", id: result.MovieResults[0].ID}, nil
+	}
+	if len(result.TVResults) == 1 {
+		return target{kind: "tv", id: result.TVResults[0].ID}, nil
+	}
+	episode := result.TVEpisodeResults[0]
+	return target{
+		kind:          "episode",
+		id:            episode.ID,
+		showID:        episode.ShowID,
+		seasonNumber:  episode.SeasonNumber,
+		episodeNumber: episode.EpisodeNumber,
+	}, nil
+}
+
+func resolutionError(item rating, result findResponse) error {
+	return fmt.Errorf(
+		"no unambiguous exact tmdb mapping for imdb id (title type %q; movie=%d tv=%d episode=%d)",
+		item.Kind,
+		len(result.MovieResults),
+		len(result.TVResults),
+		len(result.TVEpisodeResults),
+	)
+}
+
+func (c *apiClient) addRating(ctx context.Context, item target, value float64) error {
+	var path string
+	switch item.kind {
+	case "movie":
+		path = fmt.Sprintf("/movie/%d/rating", item.id)
+	case "tv":
+		path = fmt.Sprintf("/tv/%d/rating", item.id)
+	case "episode":
+		if item.showID == 0 {
+			return fmt.Errorf("tmdb episode mapping did not include show_id")
+		}
+		path = fmt.Sprintf(
+			"/tv/%d/season/%d/episode/%d/rating",
+			item.showID,
+			item.seasonNumber,
+			item.episodeNumber,
+		)
+	default:
+		return fmt.Errorf("unsupported tmdb target kind %q", item.kind)
+	}
+
+	values := url.Values{}
+	values.Set("session_id", c.sessionID)
+	payload, err := json.Marshal(map[string]float64{"value": value})
+	if err != nil {
+		return fmt.Errorf("failure encoding tmdb rating request: %w", err)
+	}
+
+	_, err = c.do(
+		ctx,
+		http.MethodPost,
+		path+"?"+values.Encode(),
+		payload,
+		http.StatusOK,
+		http.StatusCreated,
+	)
+	if err != nil {
+		return fmt.Errorf("failure writing tmdb rating: %w", err)
+	}
+	return nil
+}
+
+func (c *apiClient) do(
+	ctx context.Context,
+	method string,
+	path string,
+	payload []byte,
+	expected ...int,
+) ([]byte, error) {
+	for attempt := 0; attempt < 3; attempt++ {
+		var body io.Reader = http.NoBody
+		if payload != nil {
+			body = bytes.NewReader(payload)
+		}
+
+		req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
+		if err != nil {
+			return nil, fmt.Errorf("failure creating tmdb request: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+c.readToken)
+		req.Header.Set("Accept", "application/json")
+		if payload != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			if attempt < 2 {
+				if err := waitForRetry(ctx, time.Duration(attempt+1)*time.Second); err != nil {
+					return nil, err
+				}
+				continue
+			}
+			return nil, fmt.Errorf("failure sending tmdb request: %w", err)
+		}
+
+		responseBody, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("failure reading tmdb response: %w", readErr)
+		}
+
+		if statusAllowed(resp.StatusCode, expected) {
+			return responseBody, nil
+		}
+
+		if (resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500) && attempt < 2 {
+			delay := retryDelay(resp, attempt)
+			if err := waitForRetry(ctx, delay); err != nil {
+				return nil, err
+			}
+			continue
+		}
+
+		message := strings.TrimSpace(string(responseBody))
+		if len(message) > 500 {
+			message = message[:500] + "..."
+		}
+		return nil, fmt.Errorf("tmdb api returned status %d: %s", resp.StatusCode, message)
+	}
+	return nil, fmt.Errorf("tmdb request exhausted retries")
+}
+
+func statusAllowed(status int, expected []int) bool {
+	for _, value := range expected {
+		if status == value {
+			return true
 		}
 	}
-	return ""
+	return false
+}
+
+func retryDelay(resp *http.Response, attempt int) time.Duration {
+	if value := strings.TrimSpace(resp.Header.Get("Retry-After")); value != "" {
+		if seconds, err := strconv.Atoi(value); err == nil && seconds > 0 {
+			return time.Duration(seconds) * time.Second
+		}
+	}
+	return time.Duration(attempt+1) * time.Second
+}
+
+func waitForRetry(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }

@@ -34,8 +34,9 @@ type Trakt struct {
 }
 
 type TMDb struct {
-	Enabled *bool   `koanf:"ENABLED"`
-	Cookie  *string `koanf:"COOKIE"`
+	Enabled         *bool   `koanf:"ENABLED"`
+	ReadAccessToken *string `koanf:"READACCESSTOKEN"`
+	SessionID       *string `koanf:"SESSIONID"`
 }
 
 type Sync struct {
@@ -148,8 +149,13 @@ func (c *Config) Validate() error {
 	if !slices.Contains(validSyncModes(), string(*c.Sync.Mode)) {
 		return fmt.Errorf("field 'SYNC_MODE' must be one of: %s", strings.Join(validSyncModes(), ", "))
 	}
-	if c.TMDb.Enabled != nil && *c.TMDb.Enabled && isNilOrEmpty(c.TMDb.Cookie) {
-		return fmt.Errorf("field 'TMDB_COOKIE' is required when 'TMDB_ENABLED' is true")
+	if c.TMDb.Enabled != nil && *c.TMDb.Enabled {
+		if isNilOrEmpty(c.TMDb.ReadAccessToken) {
+			return fmt.Errorf("field 'TMDB_READACCESSTOKEN' is required when 'TMDB_ENABLED' is true")
+		}
+		if isNilOrEmpty(c.TMDb.SessionID) {
+			return fmt.Errorf("field 'TMDB_SESSIONID' is required when 'TMDB_ENABLED' is true")
+		}
 	}
 	return c.checkDummies()
 }
@@ -222,8 +228,11 @@ func (c *Config) applyDefaults() {
 	if c.TMDb.Enabled == nil {
 		c.TMDb.Enabled = pointer(false)
 	}
-	if c.TMDb.Cookie == nil {
-		c.TMDb.Cookie = pointer("")
+	if c.TMDb.ReadAccessToken == nil {
+		c.TMDb.ReadAccessToken = pointer("")
+	}
+	if c.TMDb.SessionID == nil {
+		c.TMDb.SessionID = pointer("")
 	}
 	if c.Sync.Mode == nil {
 		c.Sync.Mode = pointer(SyncModeDryRun)
