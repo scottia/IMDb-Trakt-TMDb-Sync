@@ -1,5 +1,5 @@
-[![sync](https://github.com/scottia/imdb-trakt-sync/actions/workflows/sync.yaml/badge.svg?branch=main&event=push)](https://github.com/scottia/imdb-trakt-sync/actions/workflows/sync.yaml?query=branch%3Amain+event%3Apush)
-[![quality](https://github.com/scottia/imdb-trakt-sync/actions/workflows/quality.yaml/badge.svg?branch=main&event=push)](https://github.com/scottia/imdb-trakt-sync/actions/workflows/quality.yaml?query=branch%3Amain+event%3Apush)
+[![sync](https://github.com/scottia/imdb-trakt-sync/actions/workflows/sync.yaml/badge.svg?branch=main)](https://github.com/scottia/imdb-trakt-sync/actions/workflows/sync.yaml?query=branch%3Amain)
+[![quality](https://github.com/scottia/imdb-trakt-sync/actions/workflows/quality.yaml/badge.svg?branch=main)](https://github.com/scottia/imdb-trakt-sync/actions/workflows/quality.yaml?query=branch%3Amain)
 > **Note for forks:** The badges above are hardcoded to this repository. After forking, update the two badge URLs at the top of this file, replacing `scottia/imdb-trakt-sync` with your own `{username}/{repo-name}`.
 
 # imdb-trakt-sync
