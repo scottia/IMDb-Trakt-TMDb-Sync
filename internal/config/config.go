@@ -175,7 +175,12 @@ func (c *Config) WriteFile(path string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return err
+	}
+	// os.WriteFile does not change the mode of an existing file, so tighten
+	// permissions explicitly after every write as well as on first creation.
+	return os.Chmod(path, 0o600)
 }
 
 func (c *Config) Flatten() map[string]interface{} {

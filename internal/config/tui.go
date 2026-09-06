@@ -16,6 +16,7 @@ import (
 type field struct {
 	name    string
 	preview string
+	secret  bool
 	input   textinput.Model
 }
 
@@ -23,7 +24,14 @@ func (f *field) activate() tea.Cmd {
 	f.input.Cursor.Style = focusedStyle
 	f.input.TextStyle = focusedStyle
 	f.input.PromptStyle = focusedStyle
-	f.input.Placeholder = f.preview
+	if f.secret {
+		f.input.EchoMode = textinput.EchoPassword
+		f.input.EchoCharacter = '*'
+		f.input.Placeholder = maskedSecretPreview(f.preview)
+	} else {
+		f.input.EchoMode = textinput.EchoNormal
+		f.input.Placeholder = f.preview
+	}
 	return f.input.Focus()
 }
 
@@ -65,7 +73,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			nextField := &m.fields[m.cursor]
 			return m, nextField.activate()
 		case tea.KeyTab:
-			currentField.input.SetValue(currentField.input.Placeholder)
+			if currentField.secret {
+				currentField.input.SetValue(currentField.preview)
+			} else {
+				currentField.input.SetValue(currentField.input.Placeholder)
+			}
 		}
 	}
 	return m, m.updateInput(msg)
@@ -137,13 +149,40 @@ func NewTeaProgram(conf map[string]interface{}, opts ...tea.ProgramOption) *tea.
 		if value != nil && reflect.TypeOf(value).Kind() == reflect.Slice {
 			value = strings.Trim(strings.Join(strings.Fields(fmt.Sprintf("%v", value)), ","), "[]")
 		}
+		preview := ""
+		if value != nil {
+			preview = fmt.Sprintf("%v", value)
+		}
 		m.fields = append(m.fields, field{
 			name:    key,
-			preview: fmt.Sprintf("%v", value),
+			preview: preview,
+			secret:  isSensitiveField(key),
 			input:   defaultTextInput(),
 		})
 	}
 	return tea.NewProgram(&m, opts...)
+}
+
+func isSensitiveField(name string) bool {
+	switch name {
+	case "IMDB_EMAIL",
+		"IMDB_PASSWORD",
+		"IMDB_COOKIEATMAIN",
+		"TRAKT_CLIENTID",
+		"TRAKT_CLIENTSECRET",
+		"TMDB_READACCESSTOKEN",
+		"TMDB_SESSIONID":
+		return true
+	default:
+		return false
+	}
+}
+
+func maskedSecretPreview(value string) string {
+	if value == "" {
+		return ""
+	}
+	return strings.Repeat("*", 8)
 }
 
 const helpMessage = "\n—— TAB autocomplete —— ENTER confirm —— ESC abort ——\n"
