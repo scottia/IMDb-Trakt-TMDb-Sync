@@ -28,12 +28,21 @@ env:
   ITS_TMDB_ENABLED: ${{ secrets.TMDB_ENABLED }}
   ITS_TMDB_READACCESSTOKEN: ${{ secrets.TMDB_READ_ACCESS_TOKEN }}
   ITS_TMDB_SESSIONID: ${{ secrets.TMDB_SESSION_ID }}
+  ITS_STATE_DIR: ${{ github.workspace }}/sync-state/state
+  ITS_STATE_RECONCILEINTERVAL: 168h
 jobs:
   sync:
     runs-on: ubuntu-24.04
     steps:
     - name: Check out code
       uses: actions/checkout@v5
+    - name: Check out sync state
+      uses: actions/checkout@v5
+      with:
+        ref: sync-state
+        path: sync-state
+        sparse-checkout: state
+        token: ${{ secrets.GH_PAT }}
     - name: Install Google Chrome
       run: |
         wget -q https://storage.googleapis.com/chromium-browser-snapshots/Linux_x64/1321438/chrome-linux.zip
@@ -61,6 +70,19 @@ jobs:
         fi
     - name: Sync
       run: make sync
+    - name: Persist sync state
+      if: success()
+      working-directory: sync-state
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git add state
+        if git diff --cached --quiet; then
+          echo "sync state unchanged"
+          exit 0
+        fi
+        git commit -m "chore(state): advance IMDb ratings baseline [skip ci]"
+        git push origin HEAD:sync-state
     # Trakt rotates the refresh token every 7 days, so the token file
     # written by Sync (if any) must be written back to the repository
     # secret, or the next scheduled run will require manual intervention.
