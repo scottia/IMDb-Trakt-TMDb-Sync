@@ -228,13 +228,13 @@ func (s *Syncer) syncLists(ctx context.Context) error {
 			}
 			continue
 		}
-		traktListID := s.user.traktLists[imdbList.ListID].IDMeta.Trakt
+		traktListSlug := s.user.traktLists[imdbList.ListID].IDMeta.Slug
 		if len(diff.Add) > 0 {
 			if *s.conf.Mode == appconfig.SyncModeDryRun {
 				s.logger.Info("sync would have added trakt list items", "count", len(diff.Add), "name", imdbList.ListName)
 				continue
 			}
-			if err := s.traktClient.ListItemsAdd(ctx, traktListID, imdbList.ListName, diff.Add); err != nil {
+			if err := s.traktClient.ListItemsAdd(ctx, traktListSlug, imdbList.ListName, diff.Add); err != nil {
 				return fmt.Errorf("failure adding items to trakt list %s: %w", imdbList.ListName, err)
 			}
 		} else {
@@ -245,7 +245,7 @@ func (s *Syncer) syncLists(ctx context.Context) error {
 				s.logger.Info("sync would have deleted trakt list items", "count", len(diff.Remove), "name", imdbList.ListName)
 				continue
 			}
-			if err := s.traktClient.ListItemsRemove(ctx, traktListID, imdbList.ListName, diff.Remove); err != nil {
+			if err := s.traktClient.ListItemsRemove(ctx, traktListSlug, imdbList.ListName, diff.Remove); err != nil {
 				return fmt.Errorf("failure removing trakt list items from %s: %w", imdbList.ListName, err)
 			}
 		} else {

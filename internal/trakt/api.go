@@ -25,10 +25,10 @@ const (
 	pathRatings             = "/sync/ratings"
 	pathRatingsRemove       = "/sync/ratings/remove"
 	pathUserInfo            = "/users/me"
-	pathUserList            = "/users/%s/lists/%d"
-	pathUserListItems       = "/users/%s/lists/%d/items"
-	pathUserListItemsRemove = "/users/%s/lists/%d/items/remove"
-	pathUserLists           = "/users/%s/lists"
+	pathUserList            = "/users/me/lists/%s"
+	pathUserListItems       = "/users/me/lists/%s/items"
+	pathUserListItemsRemove = "/users/me/lists/%s/items/remove"
+	pathUserLists           = "/users/me/lists"
 	pathWatchlist           = "/sync/watchlist"
 	pathWatchlistRemove     = "/sync/watchlist/remove"
 
@@ -52,10 +52,10 @@ type API interface {
 	HistoryGet(ctx context.Context, itType, itID string) (Items, error)
 	HistoryRemove(ctx context.Context, its Items) error
 	ListCreate(ctx context.Context, name string) (*IDMeta, error)
-	ListGet(ctx context.Context, lid int) (*List, error)
-	ListGetMeta(ctx context.Context, lid int) (*List, error)
-	ListItemsAdd(ctx context.Context, lid int, name string, its Items) error
-	ListItemsRemove(ctx context.Context, lid int, name string, its Items) error
+	ListGet(ctx context.Context, lid string) (*List, error)
+	ListGetMeta(ctx context.Context, lid string) (*List, error)
+	ListItemsAdd(ctx context.Context, lid string, name string, its Items) error
+	ListItemsRemove(ctx context.Context, lid string, name string, its Items) error
 	ListsGet(ctx context.Context, ids IDMetas) (Lists, error)
 	ListsGetAllMeta(ctx context.Context) (Lists, error)
 	RatingsAdd(ctx context.Context, its Items) error
@@ -154,8 +154,7 @@ func (c *client) ListCreate(ctx context.Context, name string) (*IDMeta, error) {
 		return nil, fmt.Errorf("failure marshaling list add body: %w", err)
 	}
 	body := bytes.NewReader(b)
-	path := fmt.Sprintf(pathUserLists, c.username)
-	resp, err := doRequest(ctx, c.httpClient, http.MethodPost, c.baseURL, path, nil, body, nil, http.StatusCreated)
+	resp, err := doRequest(ctx, c.httpClient, http.MethodPost, c.baseURL, pathUserLists, nil, body, nil, http.StatusCreated)
 	if err != nil {
 		return nil, fmt.Errorf("failure doing request: %w", err)
 	}
@@ -169,12 +168,12 @@ func (c *client) ListCreate(ctx context.Context, name string) (*IDMeta, error) {
 	return &list.IDMeta, nil
 }
 
-func (c *client) ListGet(ctx context.Context, lid int) (*List, error) {
+func (c *client) ListGet(ctx context.Context, lid string) (*List, error) {
 	list, err := c.ListGetMeta(ctx, lid)
 	if err != nil {
 		return nil, fmt.Errorf("failure getting list meta: %w", err)
 	}
-	path := fmt.Sprintf(pathUserListItems, c.username, lid)
+	path := fmt.Sprintf(pathUserListItems, lid)
 	resp, err := doRequest(ctx, c.httpClient, http.MethodGet, c.baseURL, path, nil, http.NoBody, nil, http.StatusOK)
 	if err != nil {
 		return nil, fmt.Errorf("failure doing request: %w", err)
@@ -187,8 +186,8 @@ func (c *client) ListGet(ctx context.Context, lid int) (*List, error) {
 	return list, nil
 }
 
-func (c *client) ListGetMeta(ctx context.Context, lid int) (*List, error) {
-	path := fmt.Sprintf(pathUserList, c.username, lid)
+func (c *client) ListGetMeta(ctx context.Context, lid string) (*List, error) {
+	path := fmt.Sprintf(pathUserList, lid)
 	resp, err := doRequest(ctx, c.httpClient, http.MethodGet, c.baseURL, path, nil, http.NoBody, nil, http.StatusOK, http.StatusNoContent)
 	if err != nil {
 		return nil, fmt.Errorf("failure doing request: %w", err)
@@ -203,8 +202,8 @@ func (c *client) ListGetMeta(ctx context.Context, lid int) (*List, error) {
 	return &list, nil
 }
 
-func (c *client) ListItemsAdd(ctx context.Context, lid int, name string, its Items) error {
-	path := fmt.Sprintf(pathUserListItems, c.username, lid)
+func (c *client) ListItemsAdd(ctx context.Context, lid string, name string, its Items) error {
+	path := fmt.Sprintf(pathUserListItems, lid)
 	l, err := c.postItemsChunked(ctx, path, its, http.StatusCreated)
 	if err != nil {
 		return err
@@ -213,8 +212,8 @@ func (c *client) ListItemsAdd(ctx context.Context, lid int, name string, its Ite
 	return nil
 }
 
-func (c *client) ListItemsRemove(ctx context.Context, lid int, name string, its Items) error {
-	path := fmt.Sprintf(pathUserListItemsRemove, c.username, lid)
+func (c *client) ListItemsRemove(ctx context.Context, lid string, name string, its Items) error {
+	path := fmt.Sprintf(pathUserListItemsRemove, lid)
 	l, err := c.postItemsChunked(ctx, path, its, http.StatusOK)
 	if err != nil {
 		return err
@@ -236,7 +235,7 @@ func (c *client) ListsGet(ctx context.Context, ids IDMetas) (Lists, error) {
 			waitGroup.Add(1)
 			go func(id IDMeta) {
 				defer waitGroup.Done()
-				list, err := c.ListGet(ctx, id.Trakt)
+				list, err := c.ListGet(ctx, id.Slug)
 				if err != nil {
 					errChan <- fmt.Errorf("unexpected error while fetching lists: %w", err)
 					return
@@ -261,8 +260,7 @@ func (c *client) ListsGet(ctx context.Context, ids IDMetas) (Lists, error) {
 }
 
 func (c *client) ListsGetAllMeta(ctx context.Context) (Lists, error) {
-	path := fmt.Sprintf(pathUserLists, c.username)
-	resp, err := doRequest(ctx, c.httpClient, http.MethodGet, c.baseURL, path, nil, http.NoBody, nil, http.StatusOK)
+	resp, err := doRequest(ctx, c.httpClient, http.MethodGet, c.baseURL, pathUserLists, nil, http.NoBody, nil, http.StatusOK)
 	if err != nil {
 		return nil, fmt.Errorf("failure doing request: %w", err)
 	}

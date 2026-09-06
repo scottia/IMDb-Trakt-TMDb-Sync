@@ -35,7 +35,9 @@ func doRequest(ctx context.Context, client *http.Client, method, baseURL, path s
 		return nil, fmt.Errorf("failed sending http request: %w", err)
 	}
 	if !slices.Contains(statusCodes, resp.StatusCode) {
-		return nil, NewUnexpectedStatusCodeError(resp.StatusCode, statusCodes...)
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return nil, NewUnexpectedStatusCodeError(resp.StatusCode, req.URL.String(), string(body), statusCodes...)
 	}
 	return resp, nil
 }

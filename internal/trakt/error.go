@@ -8,16 +8,20 @@ import (
 type UnexpectedStatusCodeError struct {
 	Got  int
 	Want []int
+	URL  string
+	Body string
 }
 
 func (e *UnexpectedStatusCodeError) Error() string {
-	return fmt.Sprintf("unexpected status code: got %d, want one of %d", e.Got, e.Want)
+	return fmt.Sprintf("unexpected status code: got %d, want one of %d (url: %s, body: %s)", e.Got, e.Want, e.URL, e.Body)
 }
 
-func NewUnexpectedStatusCodeError(got int, want ...int) error {
+func NewUnexpectedStatusCodeError(got int, reqURL, body string, want ...int) error {
 	return &UnexpectedStatusCodeError{
 		Got:  got,
 		Want: want,
+		URL:  reqURL,
+		Body: body,
 	}
 }
 
@@ -36,14 +40,14 @@ func NewAccountLimitExceededError(headers http.Header) error {
 }
 
 type ListNotFoundError struct {
-	ID int
+	ID string
 }
 
 func (e *ListNotFoundError) Error() string {
-	return fmt.Sprintf("list with id %d could not be found", e.ID)
+	return fmt.Sprintf("list with id %s could not be found", e.ID)
 }
 
-func NewListNotFoundError(id int) error {
+func NewListNotFoundError(id string) error {
 	return &ListNotFoundError{
 		ID: id,
 	}

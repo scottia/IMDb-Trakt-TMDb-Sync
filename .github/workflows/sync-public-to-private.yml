@@ -1,0 +1,42 @@
+name: Sync Public to Private
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    name: Merge public main into private main
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout private repository
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch public repository
+        run: |
+          git remote add public https://github.com/scottia/imdb-trakt-sync-2.git
+          git fetch public main
+
+      - name: Show incoming commits
+        run: |
+          echo "Commits available from public repository:"
+          git log --oneline HEAD..public/main || true
+
+      - name: Merge public main
+        run: |
+          git merge public/main --no-edit
+
+      - name: Push updated private main
+        run: |
+          git push origin main
