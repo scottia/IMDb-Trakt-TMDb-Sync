@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/cecobask/imdb-trakt-sync/internal/syncstate"
-	"github.com/cecobask/imdb-trakt-sync/internal/trakt"
 )
 
 const defaultStateReconcileInterval = 7 * 24 * time.Hour
@@ -99,15 +98,4 @@ func filterRatingDiff(input diff, upsertIDs, removeIDs map[string]struct{}) diff
 	}
 	out.Sort()
 	return out
-}
-
-func traktItemIDs(items trakt.Items) map[string]struct{} {
-	ids := make(map[string]struct{}, len(items))
-	for _, item := range items {
-		id, err := item.GetItemID()
-		if err == nil && id != nil {
-			ids[*id] = struct{}{}
-		}
-	}
-	return ids
 }
