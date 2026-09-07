@@ -43,9 +43,6 @@ type Trakt struct {
 	TokenFile    *string `koanf:"TOKENFILE"`
 	Sync         Sync    `koanf:"SYNC"`
 
-	// Compatibility aliases for code paths being migrated from the original
-	// flat destination fields. They point at the authoritative nested Sync
-	// values after applyDefaults and are not loaded directly by koanf.
 	SyncMode      *SyncMode      `koanf:"-"`
 	SyncHistory   *bool          `koanf:"-"`
 	SyncRatings   *bool          `koanf:"-"`
@@ -60,7 +57,6 @@ type TMDb struct {
 	SessionID       *string `koanf:"SESSIONID"`
 	Sync            Sync    `koanf:"SYNC"`
 
-	// Compatibility aliases; see Trakt above.
 	SyncMode      *SyncMode      `koanf:"-"`
 	SyncHistory   *bool          `koanf:"-"`
 	SyncRatings   *bool          `koanf:"-"`
@@ -74,9 +70,7 @@ type Config struct {
 	IMDb  IMDb  `koanf:"IMDB"`
 	Trakt Trakt `koanf:"TRAKT"`
 	TMDb  TMDb  `koanf:"TMDB"`
-	// Sync is retained as a migration shim for legacy global SYNC_* settings.
-	// New configuration should use TRAKT_SYNC_* and TMDB_SYNC_* settings.
-	Sync Sync `koanf:"SYNC"`
+	Sync  Sync  `koanf:"SYNC"`
 }
 
 const (
@@ -108,9 +102,7 @@ func New(path string, includeEnv bool) (*Config, error) {
 			return nil, fmt.Errorf("error loading config from environment variables: %w", err)
 		}
 	}
-	conf := Config{
-		koanf: k,
-	}
+	conf := Config{koanf: k}
 	if err := k.Unmarshal("", &conf); err != nil {
 		return nil, fmt.Errorf("error unmarshalling config: %w", err)
 	}
@@ -124,9 +116,7 @@ func NewFromMap(data map[string]interface{}) (*Config, error) {
 	if err := k.Load(cmProvider, nil); err != nil {
 		return nil, err
 	}
-	conf := Config{
-		koanf: k,
-	}
+	conf := Config{koanf: k}
 	if err := k.Unmarshal("", &conf); err != nil {
 		return nil, fmt.Errorf("error unmarshalling config: %w", err)
 	}
@@ -237,8 +227,6 @@ func (c *Config) WriteFile(path string) error {
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return err
 	}
-	// os.WriteFile does not change the mode of an existing file, so tighten
-	// permissions explicitly after every write as well as on first creation.
 	return os.Chmod(path, 0o600)
 }
 
@@ -261,6 +249,7 @@ func (c *Config) checkDummies() error {
 						return fmt.Errorf("field '%s' contains dummy value '%s'", k, str)
 					}
 				}
+			}
 		}
 	}
 	return nil
@@ -339,7 +328,6 @@ func (c *Config) applyDefaults() {
 		c.TMDb.Sync.Timeout = legacyOrDefault(c.Sync.Timeout, SyncTimeoutDefault)
 	}
 
-	// Keep the transitional aliases wired to the authoritative nested values.
 	c.Trakt.SyncMode = c.Trakt.Sync.Mode
 	c.Trakt.SyncHistory = c.Trakt.Sync.History
 	c.Trakt.SyncRatings = c.Trakt.Sync.Ratings
