@@ -15,7 +15,7 @@ One-way synchronization from IMDb to independently configurable Trakt and TMDb d
 IMDb is the source of truth. Changes made directly on Trakt or TMDb are not written back to IMDb.
 
 > [!IMPORTANT]
-> Trakt API app creation currently requires Trakt VIP access. See upstream issue [#107](https://github.com/cecobask/imdb-trakt-sync/issues/107).
+> Trakt API app creation currently requires Trakt VIP access. Manage API applications from [Trakt API Apps](https://app.trakt.tv/settings/apps).
 
 ## Destination support
 

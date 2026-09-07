@@ -27,5 +27,5 @@ formatters:
       sections:
       - standard
       - default
-      - prefix(github.com/cecobask/imdb-trakt-sync)
+      - prefix(github.com/scottia/IMDb-Trakt-TMDb-Sync)
       custom-order: true

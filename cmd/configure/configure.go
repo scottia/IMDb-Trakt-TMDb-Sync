@@ -8,8 +8,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
-	"github.com/cecobask/imdb-trakt-sync/cmd"
-	"github.com/cecobask/imdb-trakt-sync/internal/config"
+	"github.com/scottia/IMDb-Trakt-TMDb-Sync/cmd"
+	"github.com/scottia/IMDb-Trakt-TMDb-Sync/internal/config"
 )
 
 func NewCommand(ctx context.Context) *cobra.Command {

@@ -18,7 +18,7 @@ import (
 	"github.com/go-rod/rod/lib/proto"
 
 	"github.com/cecobask/awswaf/pkg/aws"
-	"github.com/cecobask/imdb-trakt-sync/internal/config"
+	"github.com/scottia/IMDb-Trakt-TMDb-Sync/internal/config"
 )
 
 type API interface {
@@ -62,7 +62,7 @@ type client struct {
 	userID              string
 	watchlistID         string
 	skipRatingsDownload bool
-	ratingsCSV           []byte
+	ratingsCSV          []byte
 }
 
 func NewAPI(ctx context.Context, conf *config.IMDb, logger *slog.Logger) (API, error) {

@@ -6,16 +6,16 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/cecobask/imdb-trakt-sync/cmd"
-	"github.com/cecobask/imdb-trakt-sync/cmd/configure"
-	"github.com/cecobask/imdb-trakt-sync/cmd/sync"
+	"github.com/scottia/IMDb-Trakt-TMDb-Sync/cmd"
+	"github.com/scottia/IMDb-Trakt-TMDb-Sync/cmd/configure"
+	"github.com/scottia/IMDb-Trakt-TMDb-Sync/cmd/sync"
 )
 
 func NewCommand(ctx context.Context) *cobra.Command {
 	command := &cobra.Command{
 		Use:     cmd.CommandNameRoot,
 		Aliases: []string{cmd.CommandAliasRoot},
-		Short:   "imdb-trakt-sync command line interface",
+		Short:   "IMDb-Trakt-TMDb-Sync command line interface",
 		PersistentPreRun: func(c *cobra.Command, _ []string) {
 			c.SetOut(os.Stdout)
 			c.SetErr(os.Stderr)

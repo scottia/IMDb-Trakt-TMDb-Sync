@@ -8,12 +8,12 @@ import (
 	"os"
 	"time"
 
-	appconfig "github.com/cecobask/imdb-trakt-sync/internal/config"
-	"github.com/cecobask/imdb-trakt-sync/internal/imdb"
-	"github.com/cecobask/imdb-trakt-sync/internal/logger"
-	"github.com/cecobask/imdb-trakt-sync/internal/syncstate"
-	"github.com/cecobask/imdb-trakt-sync/internal/tmdb"
-	"github.com/cecobask/imdb-trakt-sync/internal/trakt"
+	appconfig "github.com/scottia/IMDb-Trakt-TMDb-Sync/internal/config"
+	"github.com/scottia/IMDb-Trakt-TMDb-Sync/internal/imdb"
+	"github.com/scottia/IMDb-Trakt-TMDb-Sync/internal/logger"
+	"github.com/scottia/IMDb-Trakt-TMDb-Sync/internal/syncstate"
+	"github.com/scottia/IMDb-Trakt-TMDb-Sync/internal/tmdb"
+	"github.com/scottia/IMDb-Trakt-TMDb-Sync/internal/trakt"
 )
 
 type Syncer struct {
