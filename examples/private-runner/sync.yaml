@@ -106,6 +106,8 @@ jobs:
             exit 0
           fi
           git commit -m "chore(state): advance IMDb ratings baseline [skip ci]"
+          git fetch origin main
+          git rebase origin/main
           git push origin HEAD:main
 
       - name: Persist rotated Trakt token
