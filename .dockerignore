@@ -2,6 +2,7 @@
 assets
 build
 .env
+config.yaml
 .gitignore
 .golangci.yaml
 .goreleaser.yaml
