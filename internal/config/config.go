@@ -42,6 +42,16 @@ type Trakt struct {
 	ClientSecret *string `koanf:"CLIENTSECRET"`
 	TokenFile    *string `koanf:"TOKENFILE"`
 	Sync         Sync    `koanf:"SYNC"`
+
+	// Compatibility aliases for code paths being migrated from the original
+	// flat destination fields. They point at the authoritative nested Sync
+	// values after applyDefaults and are not loaded directly by koanf.
+	SyncMode      *SyncMode      `koanf:"-"`
+	SyncHistory   *bool          `koanf:"-"`
+	SyncRatings   *bool          `koanf:"-"`
+	SyncWatchlist *bool          `koanf:"-"`
+	SyncLists     *bool          `koanf:"-"`
+	SyncTimeout   *time.Duration `koanf:"-"`
 }
 
 type TMDb struct {
@@ -49,6 +59,14 @@ type TMDb struct {
 	ReadAccessToken *string `koanf:"READACCESSTOKEN"`
 	SessionID       *string `koanf:"SESSIONID"`
 	Sync            Sync    `koanf:"SYNC"`
+
+	// Compatibility aliases; see Trakt above.
+	SyncMode      *SyncMode      `koanf:"-"`
+	SyncHistory   *bool          `koanf:"-"`
+	SyncRatings   *bool          `koanf:"-"`
+	SyncWatchlist *bool          `koanf:"-"`
+	SyncLists     *bool          `koanf:"-"`
+	SyncTimeout   *time.Duration `koanf:"-"`
 }
 
 type Config struct {
@@ -243,7 +261,6 @@ func (c *Config) checkDummies() error {
 						return fmt.Errorf("field '%s' contains dummy value '%s'", k, str)
 					}
 				}
-			}
 		}
 	}
 	return nil
@@ -321,6 +338,20 @@ func (c *Config) applyDefaults() {
 	if c.TMDb.Sync.Timeout == nil {
 		c.TMDb.Sync.Timeout = legacyOrDefault(c.Sync.Timeout, SyncTimeoutDefault)
 	}
+
+	// Keep the transitional aliases wired to the authoritative nested values.
+	c.Trakt.SyncMode = c.Trakt.Sync.Mode
+	c.Trakt.SyncHistory = c.Trakt.Sync.History
+	c.Trakt.SyncRatings = c.Trakt.Sync.Ratings
+	c.Trakt.SyncWatchlist = c.Trakt.Sync.Watchlist
+	c.Trakt.SyncLists = c.Trakt.Sync.Lists
+	c.Trakt.SyncTimeout = c.Trakt.Sync.Timeout
+	c.TMDb.SyncMode = c.TMDb.Sync.Mode
+	c.TMDb.SyncHistory = c.TMDb.Sync.History
+	c.TMDb.SyncRatings = c.TMDb.Sync.Ratings
+	c.TMDb.SyncWatchlist = c.TMDb.Sync.Watchlist
+	c.TMDb.SyncLists = c.TMDb.Sync.Lists
+	c.TMDb.SyncTimeout = c.TMDb.Sync.Timeout
 }
 
 func legacyOrDefault[T any](legacy *T, fallback T) *T {
