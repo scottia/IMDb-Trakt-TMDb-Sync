@@ -9,7 +9,7 @@ RUN go build -o build/its main.go
 FROM ubuntu:24.04
 WORKDIR /app
 COPY --from=build /app/build ./build
-COPY --from=build /app/example.config.yaml ./config.yaml
+COPY --from=build /app/config.yaml ./config.yaml
 ENV PATH=$PATH:/app/build
 ENV DEBIAN_FRONTEND=noninteractive
 ENV DEBCONF_NOWARNINGS=yes
