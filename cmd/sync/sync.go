@@ -6,9 +6,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/cecobask/imdb-trakt-sync/cmd"
-	"github.com/cecobask/imdb-trakt-sync/internal/config"
-	"github.com/cecobask/imdb-trakt-sync/internal/syncer"
+	"github.com/scottia/IMDb-Trakt-TMDb-Sync/cmd"
+	"github.com/scottia/IMDb-Trakt-TMDb-Sync/internal/config"
+	"github.com/scottia/IMDb-Trakt-TMDb-Sync/internal/syncer"
 )
 
 func NewCommand(ctx context.Context) *cobra.Command {

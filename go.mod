@@ -1,4 +1,4 @@
-module github.com/cecobask/imdb-trakt-sync
+module github.com/scottia/IMDb-Trakt-TMDb-Sync
 
 go 1.25.1
 

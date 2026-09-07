@@ -3,8 +3,8 @@ package syncer
 import (
 	"slices"
 
-	"github.com/cecobask/imdb-trakt-sync/internal/imdb"
-	"github.com/cecobask/imdb-trakt-sync/internal/trakt"
+	"github.com/scottia/IMDb-Trakt-TMDb-Sync/internal/imdb"
+	"github.com/scottia/IMDb-Trakt-TMDb-Sync/internal/trakt"
 )
 
 type diff struct {

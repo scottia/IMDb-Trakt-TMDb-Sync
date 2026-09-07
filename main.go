@@ -6,7 +6,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/cecobask/imdb-trakt-sync/cmd/root"
+	"github.com/scottia/IMDb-Trakt-TMDb-Sync/cmd/root"
 )
 
 func main() {

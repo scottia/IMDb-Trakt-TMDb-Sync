@@ -64,13 +64,13 @@ type manifest struct {
 }
 
 type State struct {
-	dir               string
-	freshCSV          []byte
-	current           map[string]Rating
-	delta             Delta
-	manifest          manifest
-	now               time.Time
-	bootstrap         bool
+	dir                string
+	freshCSV           []byte
+	current            map[string]Rating
+	delta              Delta
+	manifest           manifest
+	now                time.Time
+	bootstrap          bool
 	fullReconciliation bool
 }
 

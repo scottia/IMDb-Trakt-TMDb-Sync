@@ -17,8 +17,8 @@ import (
 	"strings"
 	"time"
 
-	appconfig "github.com/cecobask/imdb-trakt-sync/internal/config"
-	"github.com/cecobask/imdb-trakt-sync/internal/syncstate"
+	appconfig "github.com/scottia/IMDb-Trakt-TMDb-Sync/internal/config"
+	"github.com/scottia/IMDb-Trakt-TMDb-Sync/internal/syncstate"
 )
 
 const (

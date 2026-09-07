@@ -3,7 +3,7 @@ package imdb
 import (
 	"time"
 
-	"github.com/cecobask/imdb-trakt-sync/internal/trakt"
+	"github.com/scottia/IMDb-Trakt-TMDb-Sync/internal/trakt"
 )
 
 const (

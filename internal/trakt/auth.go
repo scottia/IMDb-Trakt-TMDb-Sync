@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/cecobask/imdb-trakt-sync/internal/config"
+	"github.com/scottia/IMDb-Trakt-TMDb-Sync/internal/config"
 )
 
 type authClient struct {

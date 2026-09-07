@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cecobask/imdb-trakt-sync/internal/config"
+	"github.com/scottia/IMDb-Trakt-TMDb-Sync/internal/config"
 )
 
 const (
@@ -148,7 +148,7 @@ func (c *client) HistoryRemove(ctx context.Context, its Items) error {
 func (c *client) ListCreate(ctx context.Context, name string) (*IDMeta, error) {
 	b, err := json.Marshal(listAddBody{
 		Name:        name,
-		Description: fmt.Sprintf("List imported from IMDb using https://github.com/cecobask/imdb-trakt-sync on %v", time.Now().Format(time.RFC1123)),
+		Description: fmt.Sprintf("List imported from IMDb using https://github.com/scottia/IMDb-Trakt-TMDb-Sync on %v", time.Now().Format(time.RFC1123)),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failure marshaling list add body: %w", err)
