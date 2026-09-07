@@ -1,5 +1,7 @@
 [![sync](https://github.com/scottia/IMDb-Trakt-TMDb-Sync/actions/workflows/runner-sync-status.yaml/badge.svg?branch=main)](https://github.com/scottia/IMDb-Trakt-TMDb-Sync/actions/workflows/runner-sync-status.yaml?query=branch%3Amain)
 
+> **Note for forks:** The badge above is hardcoded to this repository. After forking, update the badge URLs at the top of this file, replacing `scottia/IMDb-Trakt-TMDb-Sync` with your own `{username}/{repo-name}`. If you use the private Runner workflow, also update the `repository:` value in the `Check out application source` step and the `repository_dispatch` target so Runner status is published to your fork.
+
 # IMDb-Trakt-TMDb-Sync
 
 <img src="./assets/logo.png" alt="IMDb to Trakt and TMDb"/>
