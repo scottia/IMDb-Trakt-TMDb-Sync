@@ -1,6 +1,7 @@
-[![sync](https://github.com/scottia/IMDb-Trakt-TMDb-Sync/actions/workflows/runner-sync-status.yaml/badge.svg?branch=main)](https://github.com/scottia/IMDb-Trakt-TMDb-Sync/actions/workflows/runner-sync-status.yaml?query=branch%3Amain)
+[![sync](https://github.com/scottia/IMDb-Trakt-TMDb-Sync/actions/workflows/runner-sync-status.yaml/badge.svg)](https://github.com/scottia/IMDb-Trakt-TMDb-Sync/actions/workflows/runner-sync-status.yaml)
+[![quality](https://github.com/scottia/IMDb-Trakt-TMDb-Sync/actions/workflows/quality.yaml/badge.svg?branch=main)](https://github.com/scottia/IMDb-Trakt-TMDb-Sync/actions/workflows/quality.yaml?query=branch%3Amain)
 
-> **Note for forks:** The badge above is hardcoded to this repository. After forking, update the badge URLs at the top of this file, replacing `scottia/IMDb-Trakt-TMDb-Sync` with your own `{username}/{repo-name}`. If you use the private Runner workflow, also update the `repository:` value in the `Check out application source` step and the `repository_dispatch` target so Runner status is published to your fork.
+> **Note for forks:** The badges above are hardcoded to this repository. After forking, update the badge URLs at the top of this file, replacing `scottia/IMDb-Trakt-TMDb-Sync` with your own `{username}/{repo-name}`. If you use the private Runner workflow, also update the `repository:` value in the `Check out application source` step and `STATUS_REPOSITORY` in the `publish-status` job so Runner status is published to your fork.
 
 # IMDb-Trakt-TMDb-Sync
 
@@ -12,6 +13,8 @@ One-way synchronization from [IMDb](https://www.imdb.com/) to:
 - **[TMDb](https://www.themoviedb.org):** ratings only, through the TMDb API when the optional TMDb destination is enabled.
 
 IMDb is the source of truth. Changes made directly on Trakt or TMDb are not written back to IMDb. Destination removals depend on `SYNC_MODE`.
+
+The **sync** badge reflects the latest private Runner result through a status-only `repository_dispatch` relay. The **quality** badge reflects lint/build CI for the public source repository.
 
 > [!IMPORTANT]
 > Trakt API app creation currently requires Trakt VIP access. See upstream issue [#107](https://github.com/cecobask/imdb-trakt-sync/issues/107).
@@ -38,6 +41,8 @@ PRIVATE RUNNER REPOSITORY
     ├── sync-state.json
     └── tmdb-id-map.json
 ```
+
+The private Runner may publish only its final `success`, `failure`, or `cancelled` result back to the public source repository. The relay does not publish Runner logs, state, cookies, tokens, or other secret values.
 
 A ready-to-copy private Runner workflow is provided at [`examples/private-runner/sync.yaml`](examples/private-runner/sync.yaml).
 
@@ -162,6 +167,8 @@ in the private Runner repository.
 
 The example checks out `scottia/IMDb-Trakt-TMDb-Sync@main`. If you maintain your own source fork, change the `repository:` value in the `Check out application source` step.
 
+The example's `publish-status` job also targets `scottia/IMDb-Trakt-TMDb-Sync` through `STATUS_REPOSITORY`. Change that value to your own `{username}/{repo-name}` if you want your Runner to drive the sync badge in your fork.
+
 The workflow runs every 12 hours by default and also supports manual dispatch. Push-triggering is restricted to changes to the Runner workflow itself, so state commits do not recursively start another sync.
 
 ### 3. Add Runner repository secrets
@@ -200,9 +207,12 @@ TMDB_READ_ACCESS_TOKEN
 TMDB_SESSION_ID
 
 GH_PAT
+STATUS_PAT
 ```
 
 `IMDB_LISTS` and `IMDB_IGNOREDLISTS` are optional. When supplied as repository secrets/environment variables, use comma-separated list IDs.
+
+`STATUS_PAT` is optional unless you want the public Runner-status badge. The example safely skips status publication when `STATUS_PAT` is not configured.
 
 The TMDb secret names are mapped by the Runner workflow as follows:
 
@@ -237,7 +247,23 @@ GH_PAT
 
 If the application source repository is private rather than public, the same token (or another token used for checkout) must also have appropriate Contents access to the private source repository.
 
-### 5. First Trakt authorization
+### 5. Optional public Runner status badge
+
+This repository includes [`.github/workflows/runner-sync-status.yaml`](.github/workflows/runner-sync-status.yaml), a status-only relay used by the sync badge at the top of this README.
+
+To publish the private Runner result to your public source fork:
+
+1. Create a **separate fine-grained personal access token** scoped only to your public source repository.
+2. Grant that token `Contents: Read and write` repository permission.
+3. Store it in the **private Runner repository** as the Actions secret `STATUS_PAT`.
+4. Set `STATUS_REPOSITORY` in the Runner workflow to your public `{username}/{repo-name}`.
+5. Keep `runner-sync-status.yaml` on the public repository's default branch.
+
+After the private `sync` job finishes, the separate `publish-status` job sends only the final `success`, `failure`, or `cancelled` result. The public relay converts that result into the badge status. No Runner state, logs, cookies, Trakt tokens, TMDb credentials, or other secret values are sent to the public repository.
+
+Keep `GH_PAT` and `STATUS_PAT` separate: `GH_PAT` is scoped to the private Runner for Trakt-token rotation, while `STATUS_PAT` is scoped to the public source repository only for the status relay.
+
+### 6. First Trakt authorization
 
 If `TRAKT_TOKEN` does not exist yet:
 
@@ -248,7 +274,7 @@ If `TRAKT_TOKEN` does not exist yet:
 
 After authorization, the workflow persists `TRAKT_TOKEN` automatically. Subsequent scheduled runs can refresh and rotate it unattended.
 
-### 6. Private persistent state
+### 7. Private persistent state
 
 The Runner stores state in its own private repository:
 
@@ -322,6 +348,7 @@ ITS_TMDB_SESSIONID=<session-id>
 
 - Never commit `.env`, `trakt-token.json`, IMDb cookies, passwords, API tokens, or private state.
 - Keep scheduled personal execution in a private Runner repository so Actions logs are not public.
+- Keep `GH_PAT` scoped to the private Runner and `STATUS_PAT` scoped only to the public source repository.
 - Prefer environment variables/`.env` over long-lived secrets in `config.yaml`.
 - The interactive configuration TUI masks secret fields and writes `config.yaml` with owner-only permissions (`0600`).
 - The application does not require the Trakt token architecture to be replaced by static access tokens; refresh-token rotation is handled automatically.
