@@ -6,6 +6,5 @@ const (
 	CommandNameRoot      = "its"
 	CommandNameSync      = "sync"
 	ConfigFileDefault    = "config.yaml"
-	ConfigFileExample    = "example.config.yaml"
 	FlagNameConfigFile   = "config-file"
 )
