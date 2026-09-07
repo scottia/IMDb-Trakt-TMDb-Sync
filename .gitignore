@@ -2,5 +2,4 @@ build/
 dist/
 __debug_*
 .env
-config.yaml
 trakt-token.json
