@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
@@ -24,7 +25,12 @@ func NewCommand(ctx context.Context) *cobra.Command {
 				return err
 			}
 			if conf, err = config.New(confPath, false); err != nil {
-				return fmt.Errorf("error loading config: %w", err)
+				if !errors.Is(err, os.ErrNotExist) {
+					return fmt.Errorf("error loading config: %w", err)
+				}
+				if conf, err = config.New(cmd.ConfigFileExample, false); err != nil {
+					return fmt.Errorf("error loading config template %s: %w", cmd.ConfigFileExample, err)
+				}
 			}
 			return nil
 		},
