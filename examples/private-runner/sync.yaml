@@ -79,6 +79,7 @@ jobs:
       - name: Sync
         working-directory: app
         env:
+          ITS_IMDB_BROWSERPATH: ${{ github.workspace }}/chrome-linux/chrome
           ITS_STATE_DIR: ${{ github.workspace }}/runner/state
           ITS_STATE_RECONCILEINTERVAL: 168h
         run: ./build/its sync --config-file ../runner/config.yaml
