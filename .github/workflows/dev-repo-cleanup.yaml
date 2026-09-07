@@ -82,7 +82,7 @@ jobs:
           test "$(head -n 1 go.mod)" = "module github.com/scottia/IMDb-Trakt-TMDb-Sync"
           grep -q 'github.com/cecobask/awswaf' go.mod
 
-          if git grep -n 'github.com/cecobask/imdb-trakt-sync' -- . ':!LICENSE'; then
+          if git grep -n 'github.com/cecobask/imdb-trakt-sync' -- . ':!LICENSE' ':!.github/workflows/dev-repo-cleanup.yaml'; then
             echo "ERROR: stale upstream project module path remains"
             exit 1
           fi
