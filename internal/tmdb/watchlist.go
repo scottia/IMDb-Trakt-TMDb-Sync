@@ -141,6 +141,7 @@ func SyncWatchlist(
 			"resolved", len(desired),
 			"add", len(toAdd),
 			"remove", len(toRemove),
+			"removals_safe", failed == 0,
 			"failed", failed,
 			"cache_hits", cacheHits,
 			"api_lookups", apiLookups,
@@ -162,7 +163,7 @@ func SyncWatchlist(
 	}
 
 	removed := 0
-	if mode == appconfig.SyncModeFull {
+	if mode == appconfig.SyncModeFull && failed == 0 {
 		for _, item := range toRemove {
 			if err := client.setWatchlist(ctx, accountID, item, false); err != nil {
 				if isHardItemError(err) {
@@ -175,7 +176,15 @@ func SyncWatchlist(
 			removed++
 		}
 	} else if len(toRemove) > 0 {
-		logger.Info("tmdb watchlist removals suppressed by sync mode", "count", len(toRemove), "mode", mode)
+		if mode == appconfig.SyncModeFull && failed > 0 {
+			logger.Warn(
+				"tmdb watchlist removals suppressed because source mapping was incomplete",
+				"count", len(toRemove),
+				"failed", failed,
+			)
+		} else {
+			logger.Info("tmdb watchlist removals suppressed by sync mode", "count", len(toRemove), "mode", mode)
+		}
 	}
 
 	if err := saveMappingCache(cachePath, cache); err != nil {
