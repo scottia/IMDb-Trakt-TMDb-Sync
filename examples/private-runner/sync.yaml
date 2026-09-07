@@ -74,6 +74,7 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: 1.25.1
+          cache-dependency-path: app/go.sum
 
       - name: Build
         working-directory: app
@@ -120,3 +121,28 @@ jobs:
             exit 1
           fi
           gh secret set TRAKT_TOKEN --repo "$GITHUB_REPOSITORY" < "$ITS_TRAKT_TOKENFILE"
+
+  publish-status:
+    name: publish runner status
+    needs: sync
+    if: always()
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ secrets.STATUS_PAT }}
+      RUNNER_STATUS: ${{ needs.sync.result }}
+      STATUS_REPOSITORY: scottia/IMDb-Trakt-TMDb-Sync
+    steps:
+      - name: Publish Runner status
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "no STATUS_PAT secret set; skipping public Runner status"
+            exit 0
+          fi
+
+          echo "Publishing Runner status: $RUNNER_STATUS"
+
+          gh api \
+            --method POST \
+            "repos/$STATUS_REPOSITORY/dispatches" \
+            -f event_type=runner_sync_status \
+            -F "client_payload[status]=$RUNNER_STATUS"
