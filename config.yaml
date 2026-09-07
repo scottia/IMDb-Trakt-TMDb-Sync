@@ -8,18 +8,24 @@ IMDB:
   TRACE: false
   HEADLESS: true
   BROWSERPATH:
-SYNC:
-  MODE: dry-run
-  HISTORY: false
-  RATINGS: true
-  WATCHLIST: true
-  LISTS: true
-  TIMEOUT: 15m
 TRAKT:
+  ENABLED: true
   CLIENTID: your-trakt-client-id
   CLIENTSECRET: your-trakt-client-secret
   TOKENFILE: trakt-token.json
+  SYNC_MODE: dry-run
+  SYNC_HISTORY: false
+  SYNC_RATINGS: true
+  SYNC_WATCHLIST: true
+  SYNC_LISTS: true
+  SYNC_TIMEOUT: 15m
 TMDB:
   ENABLED: false
   READACCESSTOKEN:
   SESSIONID:
+  SYNC_MODE: dry-run
+  SYNC_HISTORY: false
+  SYNC_RATINGS: true
+  SYNC_WATCHLIST: false
+  SYNC_LISTS: false
+  SYNC_TIMEOUT: 15m
