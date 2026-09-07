@@ -10,15 +10,25 @@ permissions:
 
 jobs:
   status:
+    name: private runner
     runs-on: ubuntu-24.04
 
     steps:
-      - name: Report private Runner status
+      - name: Validate private Runner status
         env:
           RUNNER_STATUS: ${{ github.event.client_payload.status }}
         run: |
           echo "Private Runner sync status: $RUNNER_STATUS"
 
-          if [ "$RUNNER_STATUS" != "success" ]; then
-            exit 1
-          fi
+          case "$RUNNER_STATUS" in
+            success)
+              exit 0
+              ;;
+            failure|cancelled)
+              exit 1
+              ;;
+            *)
+              echo "Unexpected Runner status: $RUNNER_STATUS"
+              exit 1
+              ;;
+          esac
