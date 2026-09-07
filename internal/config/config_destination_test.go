@@ -3,13 +3,14 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func destinationTestConfig(t *testing.T, values map[string]interface{}) *Config {
 	t.Helper()
 	base := map[string]interface{}{
-		"IMDB_AUTH":       string(IMDbAuthMethodNone),
-		"IMDB_LISTS":      []string{},
+		"IMDB_AUTH":         string(IMDbAuthMethodNone),
+		"IMDB_LISTS":        []string{},
 		"IMDB_IGNOREDLISTS": []string{},
 	}
 	for key, value := range values {
@@ -27,31 +28,40 @@ func TestDestinationDefaults(t *testing.T) {
 	if conf.Trakt.Enabled == nil || !*conf.Trakt.Enabled {
 		t.Fatal("TRAKT_ENABLED default = false, want true")
 	}
-	if conf.TMDb.Enabled == nil || *conf.TMDb.Enabled {
-		t.Fatal("TMDB_ENABLED default = true, want false")
+	if conf.TMDb.Enabled == nil || !*conf.TMDb.Enabled {
+		t.Fatal("TMDB_ENABLED default = false, want true")
 	}
-	if got := *conf.Trakt.SyncMode; got != SyncModeDryRun {
-		t.Fatalf("TRAKT_SYNC_MODE default = %q, want %q", got, SyncModeDryRun)
+	if got := *conf.Trakt.Sync.Mode; got != SyncModeAddOnly {
+		t.Fatalf("TRAKT_SYNC_MODE default = %q, want %q", got, SyncModeAddOnly)
 	}
-	if got := *conf.TMDb.SyncMode; got != SyncModeDryRun {
-		t.Fatalf("TMDB_SYNC_MODE default = %q, want %q", got, SyncModeDryRun)
+	if got := *conf.TMDb.Sync.Mode; got != SyncModeAddOnly {
+		t.Fatalf("TMDB_SYNC_MODE default = %q, want %q", got, SyncModeAddOnly)
 	}
-	if !*conf.Trakt.SyncRatings || !*conf.TMDb.SyncRatings {
-		t.Fatal("ratings defaults should be enabled for both destinations")
+	if !*conf.Trakt.Sync.History || !*conf.Trakt.Sync.Ratings || !*conf.Trakt.Sync.Watchlist || !*conf.Trakt.Sync.Lists {
+		t.Fatal("all supported Trakt sync feature defaults should be enabled")
 	}
-	if *conf.TMDb.SyncHistory || *conf.TMDb.SyncWatchlist || *conf.TMDb.SyncLists {
-		t.Fatal("TMDb history/watchlist/lists defaults should be disabled")
+	if !*conf.TMDb.Sync.Ratings || !*conf.TMDb.Sync.Watchlist {
+		t.Fatal("all supported TMDb sync feature defaults should be enabled")
+	}
+	if *conf.TMDb.Sync.History || *conf.TMDb.Sync.Lists {
+		t.Fatal("unsupported TMDb history/list defaults should remain disabled")
+	}
+	if got := *conf.Trakt.Sync.Timeout; got != 30*time.Minute {
+		t.Fatalf("TRAKT_SYNC_TIMEOUT default = %v, want 30m", got)
+	}
+	if got := *conf.TMDb.Sync.Timeout; got != 30*time.Minute {
+		t.Fatalf("TMDB_SYNC_TIMEOUT default = %v, want 30m", got)
 	}
 }
 
 func TestValidateTMDbOnlyWithoutTraktCredentials(t *testing.T) {
 	conf := destinationTestConfig(t, map[string]interface{}{
-		"TRAKT_ENABLED":          false,
-		"TMDB_ENABLED":           true,
-		"TMDB_SYNC_RATINGS":      false,
-		"TMDB_SYNC_WATCHLIST":    false,
-		"TMDB_SYNC_HISTORY":      false,
-		"TMDB_SYNC_LISTS":        false,
+		"TRAKT_ENABLED":       false,
+		"TMDB_ENABLED":        true,
+		"TMDB_SYNC_RATINGS":   false,
+		"TMDB_SYNC_WATCHLIST": false,
+		"TMDB_SYNC_HISTORY":   false,
+		"TMDB_SYNC_LISTS":     false,
 	})
 	if err := conf.Validate(); err != nil {
 		t.Fatalf("Validate() TMDb-only error = %v", err)
@@ -115,16 +125,19 @@ func TestLegacySyncFallbackDoesNotEnableTMDbWatchlistOrLists(t *testing.T) {
 		"SYNC_WATCHLIST": true,
 		"SYNC_LISTS":     true,
 	})
-	if got := *conf.Trakt.SyncMode; got != SyncModeAddOnly {
+	if got := *conf.Trakt.Sync.Mode; got != SyncModeAddOnly {
 		t.Fatalf("TRAKT_SYNC_MODE legacy fallback = %q, want %q", got, SyncModeAddOnly)
 	}
-	if *conf.Trakt.SyncRatings {
+	if *conf.Trakt.Sync.Ratings {
 		t.Fatal("TRAKT_SYNC_RATINGS legacy fallback = true, want false")
 	}
-	if !*conf.Trakt.SyncWatchlist || !*conf.Trakt.SyncLists {
+	if !*conf.Trakt.Sync.Watchlist || !*conf.Trakt.Sync.Lists {
 		t.Fatal("legacy Trakt watchlist/list fallbacks were not applied")
 	}
-	if *conf.TMDb.SyncWatchlist || *conf.TMDb.SyncLists {
-		t.Fatal("legacy global watchlist/list settings must not implicitly enable TMDb features")
+	if *conf.TMDb.Sync.Lists {
+		t.Fatal("legacy global list setting must not implicitly enable TMDb lists")
+	}
+	if !*conf.TMDb.Sync.Watchlist {
+		t.Fatal("TMDb watchlist default should remain enabled")
 	}
 }
