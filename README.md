@@ -7,17 +7,28 @@
 
 <img src="./assets/logo.png" alt="IMDb to Trakt and TMDb"/>
 
-One-way synchronization from [IMDb](https://www.imdb.com/) to:
+One-way synchronization from [IMDb](https://www.imdb.com/) to independently configurable destinations:
 
-- **[Trakt](https://trakt.tv/dashboard):** watchlist, lists, ratings, and rating-derived history.
-- **[TMDb](https://www.themoviedb.org):** ratings only, through the TMDb API when the optional TMDb destination is enabled.
+- **[Trakt](https://trakt.tv/dashboard):** ratings, rating-derived history, watchlist, and custom lists.
+- **[TMDb](https://www.themoviedb.org):** ratings and watchlist through the TMDb API.
 
-IMDb is the source of truth. Changes made directly on Trakt or TMDb are not written back to IMDb. Destination removals depend on `SYNC_MODE`.
+IMDb is the source of truth. Changes made directly on Trakt or TMDb are not written back to IMDb. Trakt and TMDb have separate enable switches, feature switches, sync modes, and timeouts, so users may run Trakt only, TMDb only, or both.
 
 The **sync** badge reflects the latest private Runner result through a status-only `repository_dispatch` relay. The **quality** badge reflects lint/build CI for the public source repository.
 
 > [!IMPORTANT]
 > Trakt API app creation currently requires Trakt VIP access. See upstream issue [#107](https://github.com/cecobask/imdb-trakt-sync/issues/107).
+
+## Destination support
+
+| IMDb source | Trakt | TMDb |
+| --- | --- | --- |
+| Ratings | Supported | Supported |
+| Rating-derived history | Supported | Not available through the current TMDb account API |
+| Watchlist | Supported | Supported |
+| Custom lists | Supported | Reserved, but currently blocked because mixed movie/TV list writes require TMDb v4 user-access-token support |
+
+`TMDB_SYNC_HISTORY` and `TMDB_SYNC_LISTS` are included in the destination-scoped configuration model so the interface remains symmetrical. Setting either to `true` currently fails configuration validation with an explicit capability/authentication message rather than silently pretending the destination supports it.
 
 ## Privacy model
 
@@ -55,6 +66,8 @@ Environment variables use the `ITS_` prefix. Environment variables override valu
 
 For local/container use, prefer environment variables or an untracked `.env` file for secrets. The interactive configuration writer creates/tightens `config.yaml` with mode `0600`, but secret-bearing configuration should still be treated as sensitive.
 
+### IMDb source
+
 | Configuration key | Default | Purpose |
 | --- | --- | --- |
 | `IMDB_AUTH` | `cookies` | IMDb authentication mode: `credentials`, `cookies`, or `none`. |
@@ -66,23 +79,56 @@ For local/container use, prefer environment variables or an untracked `.env` fil
 | `IMDB_TRACE` | `false` | Enable browser tracing logs. |
 | `IMDB_HEADLESS` | `true` | Run the IMDb browser headlessly. |
 | `IMDB_BROWSERPATH` | empty | Optional browser executable path. |
-| `SYNC_MODE` | `dry-run` | `dry-run`, `add-only`, or `full`. |
-| `SYNC_HISTORY` | `false` | Sync rating-derived Trakt history. |
-| `SYNC_RATINGS` | `true` | Sync ratings to Trakt and, when enabled, TMDb. |
-| `SYNC_WATCHLIST` | `true` | Sync IMDb watchlist to Trakt. |
-| `SYNC_LISTS` | `true` | Sync IMDb lists to Trakt. |
-| `SYNC_TIMEOUT` | `15m` | Maximum sync duration. |
-| `TRAKT_CLIENTID` | empty | Trakt application client ID. |
-| `TRAKT_CLIENTSECRET` | empty | Trakt application client secret. |
-| `TRAKT_TOKENFILE` | `trakt-token.json` | Local Trakt OAuth token file. |
-| `TMDB_ENABLED` | `false` | Enable TMDb ratings sync. |
-| `TMDB_READACCESSTOKEN` | empty | TMDb API Read Access Token. |
-| `TMDB_SESSIONID` | empty | Authenticated TMDb session ID. |
 
-Two operational state settings are environment-only:
+### Trakt destination
+
+| Configuration key | Default | Purpose |
+| --- | --- | --- |
+| `TRAKT_ENABLED` | `true` | Enable or disable the Trakt destination as a whole. |
+| `TRAKT_CLIENTID` | empty | Trakt application client ID; required when Trakt is enabled. |
+| `TRAKT_CLIENTSECRET` | empty | Trakt application client secret; required when Trakt is enabled. |
+| `TRAKT_TOKENFILE` | `trakt-token.json` | Local Trakt OAuth token file. |
+| `TRAKT_SYNC_MODE` | `dry-run` | Trakt destination mode: `dry-run`, `add-only`, or `full`. |
+| `TRAKT_SYNC_RATINGS` | `true` | Sync IMDb ratings to Trakt. |
+| `TRAKT_SYNC_HISTORY` | `false` | Sync rating-derived Trakt history. |
+| `TRAKT_SYNC_WATCHLIST` | `true` | Sync IMDb watchlist to Trakt. |
+| `TRAKT_SYNC_LISTS` | `true` | Sync configured IMDb custom lists to Trakt. |
+| `TRAKT_SYNC_TIMEOUT` | `15m` | Maximum Trakt destination duration. |
+
+### TMDb destination
+
+| Configuration key | Default | Purpose |
+| --- | --- | --- |
+| `TMDB_ENABLED` | `false` | Enable or disable the TMDb destination as a whole. |
+| `TMDB_READACCESSTOKEN` | empty | TMDb API Read Access Token. |
+| `TMDB_SESSIONID` | empty | Authenticated TMDb v3 session ID. |
+| `TMDB_SYNC_MODE` | `dry-run` | TMDb destination mode: `dry-run`, `add-only`, or `full`. |
+| `TMDB_SYNC_RATINGS` | `true` | Sync IMDb ratings to TMDb. |
+| `TMDB_SYNC_HISTORY` | `false` | Reserved for rating-derived TMDb history; `true` is currently rejected because TMDb exposes no equivalent account history API. |
+| `TMDB_SYNC_WATCHLIST` | `false` | Sync IMDb watchlist to TMDb. |
+| `TMDB_SYNC_LISTS` | `false` | Reserved for IMDb custom-list sync; `true` is currently rejected until TMDb v4 user-access-token list support is implemented. |
+| `TMDB_SYNC_TIMEOUT` | `15m` | Maximum TMDb destination duration. |
+
+A destination sync mode applies to every supported enabled feature for that destination:
+
+- `dry-run` — calculate/report planned destination changes without writing.
+- `add-only` — add or update destination data without removals.
+- `full` — reconcile destination data to IMDb and permit removals where the feature supports them.
+
+For TMDb watchlists, `full` mode has an additional safety guard: removals are suppressed whenever any IMDb watchlist item could not be mapped unambiguously to TMDb.
+
+The shared IMDb source phase is capped by the longer timeout of the enabled destinations. After source hydration, Trakt and TMDb each receive their own destination timeout.
+
+### Legacy `SYNC_*` migration
+
+Legacy `SYNC_MODE`, `SYNC_HISTORY`, `SYNC_RATINGS`, `SYNC_WATCHLIST`, `SYNC_LISTS`, and `SYNC_TIMEOUT` values are accepted as fallback inputs for migration where applicable. New configurations and Runner secrets should use the destination-scoped `TRAKT_SYNC_*` and `TMDB_SYNC_*` names. The sanitized examples no longer define the global `SYNC_*` block.
+
+Two operational state settings remain environment-only:
 
 - `ITS_STATE_DIR` — directory containing persistent rating/state files. Empty disables persistent state.
-- `ITS_STATE_RECONCILEINTERVAL` — periodic reconciliation interval; the private Runner example uses `168h`.
+- `ITS_STATE_RECONCILEINTERVAL` — periodic ratings reconciliation interval; the private Runner example uses `168h`.
+
+Ratings state is shared at the IMDb-source level. If an enabled ratings-state consumer is running in `dry-run`, the baseline is not advanced, preventing that dry-run destination from losing source deltas while another destination writes successfully.
 
 See [`.env.example`](.env.example) and [`config.yaml`](config.yaml) for sanitized examples.
 
@@ -100,7 +146,7 @@ IMDb browser/WAF handling is managed by the application. Treat `IMDB_COOKIEATMAI
 
 ### Trakt
 
-Trakt authorization uses the OAuth device flow.
+Set `TRAKT_ENABLED=false` for a TMDb-only installation. When enabled, Trakt authorization uses the OAuth device flow.
 
 On the first run without an existing token, the application prints a verification URL and device code. Approve the code in a browser. The resulting access/refresh token pair is written to `TRAKT_TOKENFILE`.
 
@@ -111,29 +157,24 @@ After authorization, the Trakt transport:
 3. handles refresh-token rotation, and
 4. writes the current token pair back to the token file.
 
-For the private GitHub Actions Runner, the workflow also writes the potentially rotated token back to the `TRAKT_TOKEN` repository secret so unattended scheduled runs continue working.
+For the private GitHub Actions Runner, the workflow also writes the potentially rotated token back to the `TRAKT_TOKEN` repository secret so unattended scheduled runs continue working. Token seeding/persistence is skipped when `TRAKT_ENABLED=false`.
 
 ### TMDb
 
-TMDb is optional and synchronizes **ratings only**. It does not modify TMDb watchlists, lists, or history.
-
-To enable it:
+Set `TMDB_ENABLED=true` to enable the TMDb destination. Ratings and watchlist sync use the TMDb API Read Access Token plus an authenticated v3 session ID:
 
 ```text
 TMDB_ENABLED=true
 TMDB_READACCESSTOKEN=<TMDb API Read Access Token>
 TMDB_SESSIONID=<authenticated TMDb session ID>
+TMDB_SYNC_RATINGS=true
+TMDB_SYNC_WATCHLIST=true
+TMDB_SYNC_MODE=add-only
 ```
 
-`SYNC_RATINGS=false` disables both Trakt and TMDb ratings sync.
+Ratings and watchlist can be enabled independently. `TMDB_SYNC_HISTORY=true` is currently rejected because TMDb has no Trakt-like account watch-history API. `TMDB_SYNC_LISTS=true` is currently rejected because mixed movie/TV custom-list writes require a TMDb v4 user access token, which is not part of the current TMDb authentication model.
 
-`SYNC_MODE` affects TMDb behavior:
-
-- `dry-run` — report planned changes without writing.
-- `add-only` — add/update ratings without removals.
-- `full` — may remove TMDb ratings no longer present in IMDb during reconciliation.
-
-Persistent state uses the IMDb ratings snapshot as the baseline. On bootstrap, the current snapshot becomes the baseline after successful destinations; TMDb writes are skipped for that bootstrap snapshot.
+Persistent ratings state uses the IMDb ratings snapshot as the baseline. On bootstrap, the current ratings snapshot becomes the baseline after successful writable ratings destinations; historical ratings are not replayed as a new delta.
 
 ## Run with a private GitHub Actions Runner
 
@@ -173,7 +214,7 @@ The workflow runs every 12 hours by default and also supports manual dispatch. P
 
 ### 3. Add Runner repository secrets
 
-Create only the secrets required by the features you use under:
+Create only the secrets required by the destinations/features you use under:
 
 ```text
 Settings → Secrets and variables → Actions
@@ -191,20 +232,26 @@ IMDB_IGNOREDLISTS
 IMDB_TRACE
 IMDB_HEADLESS
 
-SYNC_MODE
-SYNC_HISTORY
-SYNC_RATINGS
-SYNC_WATCHLIST
-SYNC_LISTS
-SYNC_TIMEOUT
-
+TRAKT_ENABLED
 TRAKT_CLIENTID
 TRAKT_CLIENTSECRET
 TRAKT_TOKEN
+TRAKT_SYNC_MODE
+TRAKT_SYNC_HISTORY
+TRAKT_SYNC_RATINGS
+TRAKT_SYNC_WATCHLIST
+TRAKT_SYNC_LISTS
+TRAKT_SYNC_TIMEOUT
 
 TMDB_ENABLED
 TMDB_READ_ACCESS_TOKEN
 TMDB_SESSION_ID
+TMDB_SYNC_MODE
+TMDB_SYNC_HISTORY
+TMDB_SYNC_RATINGS
+TMDB_SYNC_WATCHLIST
+TMDB_SYNC_LISTS
+TMDB_SYNC_TIMEOUT
 
 GH_PAT
 STATUS_PAT
@@ -212,19 +259,28 @@ STATUS_PAT
 
 `IMDB_LISTS` and `IMDB_IGNOREDLISTS` are optional. When supplied as repository secrets/environment variables, use comma-separated list IDs.
 
-`STATUS_PAT` is optional unless you want the public Runner-status badge. The example safely skips status publication when `STATUS_PAT` is not configured.
+If the destination-control secrets are omitted, the example supplies the documented defaults. `STATUS_PAT` is optional unless you want the public Runner-status badge; the example safely skips status publication when it is not configured.
 
-The TMDb secret names are mapped by the Runner workflow as follows:
+The Runner maps repository secret names to application environment variables, for example:
 
 ```text
+TRAKT_ENABLED           → ITS_TRAKT_ENABLED
+TRAKT_SYNC_RATINGS      → ITS_TRAKT_SYNC_RATINGS
+TRAKT_SYNC_MODE         → ITS_TRAKT_SYNC_MODE
+TRAKT_SYNC_TIMEOUT      → ITS_TRAKT_SYNC_TIMEOUT
+
 TMDB_ENABLED            → ITS_TMDB_ENABLED
 TMDB_READ_ACCESS_TOKEN  → ITS_TMDB_READACCESSTOKEN
 TMDB_SESSION_ID         → ITS_TMDB_SESSIONID
+TMDB_SYNC_RATINGS       → ITS_TMDB_SYNC_RATINGS
+TMDB_SYNC_WATCHLIST     → ITS_TMDB_SYNC_WATCHLIST
+TMDB_SYNC_MODE          → ITS_TMDB_SYNC_MODE
+TMDB_SYNC_TIMEOUT       → ITS_TMDB_SYNC_TIMEOUT
 ```
 
 ### 4. Create the `GH_PAT` secret
 
-The default `GITHUB_TOKEN` cannot update repository Actions secrets. A fine-grained personal access token is therefore used only to persist a rotated `TRAKT_TOKEN`.
+The default `GITHUB_TOKEN` cannot update repository Actions secrets. A fine-grained personal access token is therefore used only to persist a rotated `TRAKT_TOKEN` when Trakt is enabled.
 
 Create a fine-grained token with:
 
@@ -265,6 +321,8 @@ Keep `GH_PAT` and `STATUS_PAT` separate: `GH_PAT` is scoped to the private Runne
 
 ### 6. First Trakt authorization
 
+Skip this section when `TRAKT_ENABLED=false`.
+
 If `TRAKT_TOKEN` does not exist yet:
 
 1. manually run the Runner `sync` workflow,
@@ -284,7 +342,7 @@ state/sync-state.json
 state/tmdb-id-map.json
 ```
 
-The workflow commits state only after successful destinations. This keeps the IMDb ratings baseline and TMDb mapping cache private and durable between ephemeral GitHub-hosted runners.
+The workflow commits state only after successful destinations and only when the ratings baseline is eligible to advance. This keeps the IMDb ratings baseline and TMDb mapping cache private and durable between ephemeral GitHub-hosted runners.
 
 ## Run in Docker
 
@@ -296,7 +354,7 @@ The workflow commits state only after successful destinations. This keeps the IM
    cd IMDb-Trakt-TMDb-Sync
    ```
 
-3. Create a Trakt application and use `urn:ietf:wg:oauth:2.0:oob` as the redirect URI.
+3. Configure at least one destination. If using Trakt, create a Trakt application and use `urn:ietf:wg:oauth:2.0:oob` as the redirect URI.
 4. Copy `.env.example` to `.env` and supply your own values.
 5. Build and run:
 
@@ -317,7 +375,7 @@ The local `trakt-token.json` is intentionally excluded from Git.
    cd IMDb-Trakt-TMDb-Sync
    ```
 
-3. Create a Trakt application and use `urn:ietf:wg:oauth:2.0:oob` as the redirect URI.
+3. Configure at least one destination. If using Trakt, create a Trakt application and use `urn:ietf:wg:oauth:2.0:oob` as the redirect URI.
 4. Build:
 
    ```bash
@@ -336,12 +394,16 @@ The local `trakt-token.json` is intentionally excluded from Git.
    make sync
    ```
 
-Environment variables can be used instead of storing secrets in `config.yaml`. For example:
+Environment variables can be used instead of storing secrets in `config.yaml`. For example, a TMDb-only ratings/watchlist setup can use:
 
 ```text
+ITS_TRAKT_ENABLED=false
 ITS_TMDB_ENABLED=true
 ITS_TMDB_READACCESSTOKEN=<token>
 ITS_TMDB_SESSIONID=<session-id>
+ITS_TMDB_SYNC_RATINGS=true
+ITS_TMDB_SYNC_WATCHLIST=true
+ITS_TMDB_SYNC_MODE=add-only
 ```
 
 ## Security notes
