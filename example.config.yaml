@@ -1,8 +1,11 @@
-# Copy this file to config.yaml and customize non-secret behavior there.
-# Keep credentials/tokens out of config.yaml and supply them through ITS_* environment variables.
+# Copy this file to config.yaml and customize it.
+# For public/private Runner use, keep actual secret values in environment variables or GitHub Actions secrets.
 
 IMDB:
   AUTH: cookies
+  EMAIL:
+  PASSWORD:
+  COOKIEATMAIN:
   LISTS: []
   IGNOREDLISTS: []
   TRACE: false
@@ -11,6 +14,8 @@ IMDB:
 
 TRAKT:
   ENABLED: true
+  CLIENTID:
+  CLIENTSECRET:
   TOKENFILE: trakt-token.json
   SYNC:
     MODE: add-only
@@ -22,6 +27,8 @@ TRAKT:
 
 TMDB:
   ENABLED: true
+  READACCESSTOKEN:
+  SESSIONID:
   SYNC:
     MODE: add-only
     RATINGS: true
