@@ -1,0 +1,24 @@
+name: runner sync
+
+on:
+  repository_dispatch:
+    types:
+      - runner_sync_status
+
+permissions:
+  contents: read
+
+jobs:
+  status:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Report private Runner status
+        env:
+          RUNNER_STATUS: ${{ github.event.client_payload.status }}
+        run: |
+          echo "Private Runner sync status: $RUNNER_STATUS"
+
+          if [ "$RUNNER_STATUS" != "success" ]; then
+            exit 1
+          fi
