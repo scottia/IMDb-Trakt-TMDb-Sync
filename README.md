@@ -1,4 +1,4 @@
-[![quality](https://github.com/scottia/IMDb-Trakt-TMDb-Sync/actions/workflows/quality.yaml/badge.svg?branch=main)](https://github.com/scottia/IMDb-Trakt-TMDb-Sync/actions/workflows/quality.yaml?query=branch%3Amain)
+[![sync](https://github.com/scottia/IMDb-Trakt-TMDb-Sync/actions/workflows/runner-sync-status.yaml/badge.svg?branch=main)](https://github.com/scottia/IMDb-Trakt-TMDb-Sync/actions/workflows/runner-sync-status.yaml?query=branch%3Amain)
 
 # IMDb-Trakt-TMDb-Sync
 
