@@ -83,7 +83,7 @@ const (
 	SyncModeAddOnly           SyncMode       = "add-only"
 	SyncModeDryRun            SyncMode       = "dry-run"
 	SyncModeFull              SyncMode       = "full"
-	SyncTimeoutDefault                       = time.Minute * 15
+	SyncTimeoutDefault                       = time.Minute * 30
 )
 
 type IMDbAuthMethod string
@@ -282,10 +282,10 @@ func (c *Config) applyDefaults() {
 		c.Trakt.TokenFile = pointer("trakt-token.json")
 	}
 	if c.Trakt.Sync.Mode == nil {
-		c.Trakt.Sync.Mode = legacyOrDefault(c.Sync.Mode, SyncModeDryRun)
+		c.Trakt.Sync.Mode = legacyOrDefault(c.Sync.Mode, SyncModeAddOnly)
 	}
 	if c.Trakt.Sync.History == nil {
-		c.Trakt.Sync.History = legacyOrDefault(c.Sync.History, false)
+		c.Trakt.Sync.History = legacyOrDefault(c.Sync.History, true)
 	}
 	if c.Trakt.Sync.Ratings == nil {
 		c.Trakt.Sync.Ratings = legacyOrDefault(c.Sync.Ratings, true)
@@ -301,7 +301,7 @@ func (c *Config) applyDefaults() {
 	}
 
 	if c.TMDb.Enabled == nil {
-		c.TMDb.Enabled = pointer(false)
+		c.TMDb.Enabled = pointer(true)
 	}
 	if c.TMDb.ReadAccessToken == nil {
 		c.TMDb.ReadAccessToken = pointer("")
@@ -310,7 +310,7 @@ func (c *Config) applyDefaults() {
 		c.TMDb.SessionID = pointer("")
 	}
 	if c.TMDb.Sync.Mode == nil {
-		c.TMDb.Sync.Mode = legacyOrDefault(c.Sync.Mode, SyncModeDryRun)
+		c.TMDb.Sync.Mode = legacyOrDefault(c.Sync.Mode, SyncModeAddOnly)
 	}
 	if c.TMDb.Sync.History == nil {
 		c.TMDb.Sync.History = pointer(false)
@@ -319,7 +319,7 @@ func (c *Config) applyDefaults() {
 		c.TMDb.Sync.Ratings = legacyOrDefault(c.Sync.Ratings, true)
 	}
 	if c.TMDb.Sync.Watchlist == nil {
-		c.TMDb.Sync.Watchlist = pointer(false)
+		c.TMDb.Sync.Watchlist = pointer(true)
 	}
 	if c.TMDb.Sync.Lists == nil {
 		c.TMDb.Sync.Lists = pointer(false)
