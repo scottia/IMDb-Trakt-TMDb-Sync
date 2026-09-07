@@ -30,7 +30,7 @@ Unsupported TMDb history/list switches are intentionally not exposed in `config.
 
 ## Configuration
 
-[`config.yaml`](config.yaml) is the single canonical configuration file and also acts as its own help/reference file. Every supported setting is documented inline with `#` comments.
+[`config.yaml`](config.yaml) is the single canonical configuration file and also acts as its own help/reference file. Every supported **non-secret** setting is documented inline with `#` comments. Credential/secret keys are intentionally not duplicated in the YAML; they are documented in [Secrets and credentials](#secrets-and-credentials).
 
 The checked-in defaults are:
 
