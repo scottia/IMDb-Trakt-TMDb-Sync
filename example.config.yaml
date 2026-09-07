@@ -1,0 +1,29 @@
+# Copy this file to config.yaml and customize non-secret behavior there.
+# Keep credentials/tokens out of config.yaml and supply them through ITS_* environment variables.
+
+IMDB:
+  AUTH: cookies
+  LISTS: []
+  IGNOREDLISTS: []
+  TRACE: false
+  HEADLESS: true
+  BROWSERPATH:
+
+TRAKT:
+  ENABLED: true
+  TOKENFILE: trakt-token.json
+  SYNC:
+    MODE: add-only
+    HISTORY: true
+    RATINGS: true
+    WATCHLIST: true
+    LISTS: true
+    TIMEOUT: 30m
+
+TMDB:
+  ENABLED: true
+  SYNC:
+    MODE: add-only
+    RATINGS: true
+    WATCHLIST: true
+    TIMEOUT: 30m
