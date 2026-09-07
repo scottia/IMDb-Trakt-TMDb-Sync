@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - .github/workflows/sync.yaml
+      - config.yaml
   schedule:
     - cron: "0 */12 * * *"
   workflow_dispatch:
@@ -18,39 +19,14 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  ITS_IMDB_AUTH: ${{ secrets.IMDB_AUTH }}
-  ITS_IMDB_EMAIL: ${{ secrets.IMDB_EMAIL }}
-  ITS_IMDB_PASSWORD: ${{ secrets.IMDB_PASSWORD }}
   ITS_IMDB_COOKIEATMAIN: ${{ secrets.IMDB_COOKIEATMAIN }}
-  ITS_IMDB_LISTS: ${{ secrets.IMDB_LISTS }}
-  ITS_IMDB_IGNOREDLISTS: ${{ secrets.IMDB_IGNOREDLISTS }}
-  ITS_IMDB_TRACE: ${{ secrets.IMDB_TRACE }}
-  ITS_IMDB_HEADLESS: ${{ secrets.IMDB_HEADLESS }}
-  ITS_IMDB_BROWSERPATH: ${{ github.workspace }}/chrome-linux/chrome
 
-  ITS_TRAKT_ENABLED: ${{ secrets.TRAKT_ENABLED || 'true' }}
   ITS_TRAKT_CLIENTID: ${{ secrets.TRAKT_CLIENTID }}
   ITS_TRAKT_CLIENTSECRET: ${{ secrets.TRAKT_CLIENTSECRET }}
   ITS_TRAKT_TOKENFILE: ${{ github.workspace }}/trakt-token.json
-  ITS_TRAKT_SYNC_MODE: ${{ secrets.TRAKT_SYNC_MODE || 'dry-run' }}
-  ITS_TRAKT_SYNC_HISTORY: ${{ secrets.TRAKT_SYNC_HISTORY || 'false' }}
-  ITS_TRAKT_SYNC_RATINGS: ${{ secrets.TRAKT_SYNC_RATINGS || 'true' }}
-  ITS_TRAKT_SYNC_WATCHLIST: ${{ secrets.TRAKT_SYNC_WATCHLIST || 'true' }}
-  ITS_TRAKT_SYNC_LISTS: ${{ secrets.TRAKT_SYNC_LISTS || 'true' }}
-  ITS_TRAKT_SYNC_TIMEOUT: ${{ secrets.TRAKT_SYNC_TIMEOUT || '15m' }}
 
-  ITS_TMDB_ENABLED: ${{ secrets.TMDB_ENABLED || 'false' }}
   ITS_TMDB_READACCESSTOKEN: ${{ secrets.TMDB_READ_ACCESS_TOKEN }}
   ITS_TMDB_SESSIONID: ${{ secrets.TMDB_SESSION_ID }}
-  ITS_TMDB_SYNC_MODE: ${{ secrets.TMDB_SYNC_MODE || 'dry-run' }}
-  ITS_TMDB_SYNC_HISTORY: ${{ secrets.TMDB_SYNC_HISTORY || 'false' }}
-  ITS_TMDB_SYNC_RATINGS: ${{ secrets.TMDB_SYNC_RATINGS || 'true' }}
-  ITS_TMDB_SYNC_WATCHLIST: ${{ secrets.TMDB_SYNC_WATCHLIST || 'false' }}
-  ITS_TMDB_SYNC_LISTS: ${{ secrets.TMDB_SYNC_LISTS || 'false' }}
-  ITS_TMDB_SYNC_TIMEOUT: ${{ secrets.TMDB_SYNC_TIMEOUT || '15m' }}
-
-  ITS_STATE_DIR: ${{ github.workspace }}/runner/state
-  ITS_STATE_RECONCILEINTERVAL: 168h
 
 jobs:
   sync:
@@ -73,10 +49,10 @@ jobs:
         run: |
           wget -q https://storage.googleapis.com/chromium-browser-snapshots/Linux_x64/1321438/chrome-linux.zip
           unzip -q chrome-linux.zip
-          if test -f "$ITS_IMDB_BROWSERPATH"; then
-            echo "Google Chrome binary stored at $ITS_IMDB_BROWSERPATH"
+          if test -f "$GITHUB_WORKSPACE/chrome-linux/chrome"; then
+            echo "Google Chrome binary stored at $GITHUB_WORKSPACE/chrome-linux/chrome"
           else
-            echo "Google Chrome binary not found at $ITS_IMDB_BROWSERPATH"
+            echo "Google Chrome binary not found"
             exit 1
           fi
 
@@ -94,19 +70,18 @@ jobs:
         env:
           TRAKT_TOKEN: ${{ secrets.TRAKT_TOKEN }}
         run: |
-          if [ "$ITS_TRAKT_ENABLED" != "true" ]; then
-            echo "Trakt destination disabled; skipping token seed"
-            exit 0
-          fi
           if [ -n "$TRAKT_TOKEN" ]; then
             printf '%s' "$TRAKT_TOKEN" > "$ITS_TRAKT_TOKENFILE"
           else
-            echo "no TRAKT_TOKEN secret set; sync will print device authorization instructions, wait for manual auth and fail if unattended"
+            echo "no TRAKT_TOKEN secret set; an enabled Trakt destination will request device authorization on first use"
           fi
 
       - name: Sync
         working-directory: app
-        run: make sync
+        env:
+          ITS_STATE_DIR: ${{ github.workspace }}/runner/state
+          ITS_STATE_RECONCILEINTERVAL: 168h
+        run: ./build/its sync --config-file ../runner/config.yaml
 
       - name: Persist sync state
         if: success()
@@ -129,9 +104,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
-          if [ "$ITS_TRAKT_ENABLED" != "true" ]; then
-            exit 0
-          fi
           if [ ! -f "$ITS_TRAKT_TOKENFILE" ]; then
             exit 0
           fi
