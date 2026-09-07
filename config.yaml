@@ -1,0 +1,96 @@
+# IMDb-Trakt-TMDb-Sync configuration
+#
+# This is the single canonical configuration file for normal application behavior.
+# Defaults are defined here and mirrored by the application.
+#
+# IMPORTANT:
+# - Keep secret values out of this file in a public repository.
+# - Supply secrets with ITS_* environment variables or GitHub Actions secrets.
+# - Environment variables override values defined here.
+# - Sync modes: dry-run | add-only | full
+#
+# For private Runner use, copy this file into the private Runner repository and
+# customize the non-secret behavior there.
+
+IMDB:
+  # Authentication method: cookies | credentials | none
+  AUTH: cookies
+
+  # Used only when AUTH=credentials. Prefer ITS_IMDB_EMAIL / ITS_IMDB_PASSWORD.
+  EMAIL:
+  PASSWORD:
+
+  # Used when AUTH=cookies. Prefer ITS_IMDB_COOKIEATMAIN.
+  COOKIEATMAIN:
+
+  # Optional IMDb custom-list IDs. Empty means all available lists.
+  LISTS: []
+
+  # Optional IMDb custom-list IDs to exclude.
+  IGNOREDLISTS: []
+
+  # Enable browser tracing/debug output.
+  TRACE: false
+
+  # Run the IMDb browser without a visible UI.
+  HEADLESS: true
+
+  # Optional browser executable path. Runner supplies this at runtime.
+  BROWSERPATH:
+
+TRAKT:
+  # Enable the Trakt destination.
+  ENABLED: true
+
+  # Trakt API application credentials. Prefer ITS_TRAKT_CLIENTID and
+  # ITS_TRAKT_CLIENTSECRET instead of storing values here.
+  CLIENTID:
+  CLIENTSECRET:
+
+  # OAuth token file used for access/refresh-token persistence.
+  TOKENFILE: trakt-token.json
+
+  SYNC:
+    # dry-run = plan only; add-only = add/update only; full = reconcile/removals.
+    MODE: add-only
+
+    # Sync rating-derived watch history to Trakt.
+    HISTORY: true
+
+    # Sync IMDb ratings to Trakt.
+    RATINGS: true
+
+    # Sync IMDb watchlist to Trakt.
+    WATCHLIST: true
+
+    # Sync IMDb custom lists to Trakt.
+    LISTS: true
+
+    # Maximum Trakt destination duration.
+    TIMEOUT: 30m
+
+TMDB:
+  # Enable the TMDb destination.
+  ENABLED: true
+
+  # TMDb API Read Access Token and authenticated v3 session ID.
+  # Prefer ITS_TMDB_READACCESSTOKEN and ITS_TMDB_SESSIONID.
+  READACCESSTOKEN:
+  SESSIONID:
+
+  SYNC:
+    # dry-run = plan only; add-only = add/update only; full = reconcile/removals.
+    MODE: add-only
+
+    # Sync IMDb ratings to TMDb.
+    RATINGS: true
+
+    # Sync IMDb watchlist to TMDb.
+    WATCHLIST: true
+
+    # Maximum TMDb destination duration.
+    TIMEOUT: 30m
+
+# Persistent-state paths are Runner/runtime concerns and remain environment-only:
+#   ITS_STATE_DIR
+#   ITS_STATE_RECONCILEINTERVAL
