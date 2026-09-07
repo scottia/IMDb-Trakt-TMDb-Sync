@@ -1,25 +1,64 @@
+# IMDb-Trakt-TMDb-Sync configuration
+# See README.md for secrets, authentication, and Runner setup.
+
 IMDB:
+  # Authentication method: cookies | credentials | none
   AUTH: cookies
-  EMAIL:
-  PASSWORD:
-  COOKIEATMAIN:
+
+  # Optional IMDb custom-list IDs. Empty means all available lists.
   LISTS: []
+
+  # Optional IMDb custom-list IDs to exclude.
   IGNOREDLISTS: []
+
+  # Enable browser tracing/debug output.
   TRACE: false
+
+  # Run the IMDb browser without a visible UI.
   HEADLESS: true
+
+  # Optional browser executable path.
   BROWSERPATH:
-SYNC:
-  MODE: dry-run
-  HISTORY: false
-  RATINGS: true
-  WATCHLIST: true
-  LISTS: true
-  TIMEOUT: 15m
+
 TRAKT:
-  CLIENTID: your-trakt-client-id
-  CLIENTSECRET: your-trakt-client-secret
+  # Enable the Trakt destination.
+  ENABLED: true
+
+  # OAuth token file used for access/refresh-token persistence.
   TOKENFILE: trakt-token.json
+
+  SYNC:
+    # dry-run = plan only; add-only = add/update only; full = reconcile/removals.
+    MODE: add-only
+
+    # Sync rating-derived watch history to Trakt.
+    HISTORY: true
+
+    # Sync IMDb ratings to Trakt.
+    RATINGS: true
+
+    # Sync IMDb watchlist to Trakt.
+    WATCHLIST: true
+
+    # Sync IMDb custom lists to Trakt.
+    LISTS: true
+
+    # Maximum Trakt destination duration.
+    TIMEOUT: 30m
+
 TMDB:
-  ENABLED: false
-  READACCESSTOKEN:
-  SESSIONID:
+  # Enable the TMDb destination.
+  ENABLED: true
+
+  SYNC:
+    # dry-run = plan only; add-only = add/update only; full = reconcile/removals.
+    MODE: add-only
+
+    # Sync IMDb ratings to TMDb.
+    RATINGS: true
+
+    # Sync IMDb watchlist to TMDb.
+    WATCHLIST: true
+
+    # Maximum TMDb destination duration.
+    TIMEOUT: 30m

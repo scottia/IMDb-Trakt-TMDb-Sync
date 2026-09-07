@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - .github/workflows/sync.yaml
+      - config.yaml
   schedule:
     - cron: "0 */12 * * *"
   workflow_dispatch:
@@ -18,29 +19,14 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  ITS_IMDB_AUTH: ${{ secrets.IMDB_AUTH }}
-  ITS_IMDB_EMAIL: ${{ secrets.IMDB_EMAIL }}
-  ITS_IMDB_PASSWORD: ${{ secrets.IMDB_PASSWORD }}
   ITS_IMDB_COOKIEATMAIN: ${{ secrets.IMDB_COOKIEATMAIN }}
-  ITS_IMDB_LISTS: ${{ secrets.IMDB_LISTS }}
-  ITS_IMDB_IGNOREDLISTS: ${{ secrets.IMDB_IGNOREDLISTS }}
-  ITS_IMDB_TRACE: ${{ secrets.IMDB_TRACE }}
-  ITS_IMDB_HEADLESS: ${{ secrets.IMDB_HEADLESS }}
-  ITS_IMDB_BROWSERPATH: ${{ github.workspace }}/chrome-linux/chrome
-  ITS_SYNC_MODE: ${{ secrets.SYNC_MODE }}
-  ITS_SYNC_HISTORY: ${{ secrets.SYNC_HISTORY }}
-  ITS_SYNC_RATINGS: ${{ secrets.SYNC_RATINGS }}
-  ITS_SYNC_WATCHLIST: ${{ secrets.SYNC_WATCHLIST }}
-  ITS_SYNC_LISTS: ${{ secrets.SYNC_LISTS }}
-  ITS_SYNC_TIMEOUT: ${{ secrets.SYNC_TIMEOUT }}
+
   ITS_TRAKT_CLIENTID: ${{ secrets.TRAKT_CLIENTID }}
   ITS_TRAKT_CLIENTSECRET: ${{ secrets.TRAKT_CLIENTSECRET }}
   ITS_TRAKT_TOKENFILE: ${{ github.workspace }}/trakt-token.json
-  ITS_TMDB_ENABLED: ${{ secrets.TMDB_ENABLED }}
+
   ITS_TMDB_READACCESSTOKEN: ${{ secrets.TMDB_READ_ACCESS_TOKEN }}
   ITS_TMDB_SESSIONID: ${{ secrets.TMDB_SESSION_ID }}
-  ITS_STATE_DIR: ${{ github.workspace }}/runner/state
-  ITS_STATE_RECONCILEINTERVAL: 168h
 
 jobs:
   sync:
@@ -63,10 +49,10 @@ jobs:
         run: |
           wget -q https://storage.googleapis.com/chromium-browser-snapshots/Linux_x64/1321438/chrome-linux.zip
           unzip -q chrome-linux.zip
-          if test -f "$ITS_IMDB_BROWSERPATH"; then
-            echo "Google Chrome binary stored at $ITS_IMDB_BROWSERPATH"
+          if test -f "$GITHUB_WORKSPACE/chrome-linux/chrome"; then
+            echo "Google Chrome binary stored at $GITHUB_WORKSPACE/chrome-linux/chrome"
           else
-            echo "Google Chrome binary not found at $ITS_IMDB_BROWSERPATH"
+            echo "Google Chrome binary not found"
             exit 1
           fi
 
@@ -87,12 +73,16 @@ jobs:
           if [ -n "$TRAKT_TOKEN" ]; then
             printf '%s' "$TRAKT_TOKEN" > "$ITS_TRAKT_TOKENFILE"
           else
-            echo "no TRAKT_TOKEN secret set; sync will print device authorization instructions, wait for manual auth and fail if unattended"
+            echo "no TRAKT_TOKEN secret set; an enabled Trakt destination will request device authorization on first use"
           fi
 
       - name: Sync
         working-directory: app
-        run: make sync
+        env:
+          ITS_IMDB_BROWSERPATH: ${{ github.workspace }}/chrome-linux/chrome
+          ITS_STATE_DIR: ${{ github.workspace }}/runner/state
+          ITS_STATE_RECONCILEINTERVAL: 168h
+        run: ./build/its sync --config-file ../runner/config.yaml
 
       - name: Persist sync state
         if: success()

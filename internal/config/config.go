@@ -27,18 +27,6 @@ type IMDb struct {
 	BrowserPath  *string         `koanf:"BROWSERPATH"`
 }
 
-type Trakt struct {
-	ClientID     *string `koanf:"CLIENTID"`
-	ClientSecret *string `koanf:"CLIENTSECRET"`
-	TokenFile    *string `koanf:"TOKENFILE"`
-}
-
-type TMDb struct {
-	Enabled         *bool   `koanf:"ENABLED"`
-	ReadAccessToken *string `koanf:"READACCESSTOKEN"`
-	SessionID       *string `koanf:"SESSIONID"`
-}
-
 type Sync struct {
 	Mode      *SyncMode      `koanf:"MODE"`
 	History   *bool          `koanf:"HISTORY"`
@@ -46,6 +34,35 @@ type Sync struct {
 	Watchlist *bool          `koanf:"WATCHLIST"`
 	Lists     *bool          `koanf:"LISTS"`
 	Timeout   *time.Duration `koanf:"TIMEOUT"`
+}
+
+type Trakt struct {
+	Enabled      *bool   `koanf:"ENABLED"`
+	ClientID     *string `koanf:"CLIENTID"`
+	ClientSecret *string `koanf:"CLIENTSECRET"`
+	TokenFile    *string `koanf:"TOKENFILE"`
+	Sync         Sync    `koanf:"SYNC"`
+
+	SyncMode      *SyncMode      `koanf:"-"`
+	SyncHistory   *bool          `koanf:"-"`
+	SyncRatings   *bool          `koanf:"-"`
+	SyncWatchlist *bool          `koanf:"-"`
+	SyncLists     *bool          `koanf:"-"`
+	SyncTimeout   *time.Duration `koanf:"-"`
+}
+
+type TMDb struct {
+	Enabled         *bool   `koanf:"ENABLED"`
+	ReadAccessToken *string `koanf:"READACCESSTOKEN"`
+	SessionID       *string `koanf:"SESSIONID"`
+	Sync            Sync    `koanf:"SYNC"`
+
+	SyncMode      *SyncMode      `koanf:"-"`
+	SyncHistory   *bool          `koanf:"-"`
+	SyncRatings   *bool          `koanf:"-"`
+	SyncWatchlist *bool          `koanf:"-"`
+	SyncLists     *bool          `koanf:"-"`
+	SyncTimeout   *time.Duration `koanf:"-"`
 }
 
 type Config struct {
@@ -66,7 +83,7 @@ const (
 	SyncModeAddOnly           SyncMode       = "add-only"
 	SyncModeDryRun            SyncMode       = "dry-run"
 	SyncModeFull              SyncMode       = "full"
-	SyncTimeoutDefault                       = time.Minute * 15
+	SyncTimeoutDefault                       = time.Minute * 30
 )
 
 type IMDbAuthMethod string
@@ -85,9 +102,7 @@ func New(path string, includeEnv bool) (*Config, error) {
 			return nil, fmt.Errorf("error loading config from environment variables: %w", err)
 		}
 	}
-	conf := Config{
-		koanf: k,
-	}
+	conf := Config{koanf: k}
 	if err := k.Unmarshal("", &conf); err != nil {
 		return nil, fmt.Errorf("error unmarshalling config: %w", err)
 	}
@@ -101,9 +116,7 @@ func NewFromMap(data map[string]interface{}) (*Config, error) {
 	if err := k.Load(cmProvider, nil); err != nil {
 		return nil, err
 	}
-	conf := Config{
-		koanf: k,
-	}
+	conf := Config{koanf: k}
 	if err := k.Unmarshal("", &conf); err != nil {
 		return nil, fmt.Errorf("error unmarshalling config: %w", err)
 	}
@@ -137,27 +150,63 @@ func (c *Config) Validate() error {
 	if err := c.validateListIdentifiers(*c.IMDb.IgnoredLists); err != nil {
 		return fmt.Errorf("field 'IMDB_IGNOREDLISTS' is invalid: %w", err)
 	}
-	if isNilOrEmpty(c.Trakt.ClientID) {
-		return fmt.Errorf("field 'TRAKT_CLIENTID' is required")
+	if !*c.Trakt.Enabled && !*c.TMDb.Enabled {
+		return fmt.Errorf("at least one destination must be enabled: 'TRAKT_ENABLED' or 'TMDB_ENABLED'")
 	}
-	if isNilOrEmpty(c.Trakt.ClientSecret) {
-		return fmt.Errorf("field 'TRAKT_CLIENTSECRET' is required")
+	if err := validateSyncMode("TRAKT_SYNC_MODE", c.Trakt.Sync.Mode); err != nil {
+		return err
 	}
-	if c.Sync.Mode == nil || *c.Sync.Mode == "" {
-		return fmt.Errorf("field 'SYNC_MODE' is required")
+	if err := validateSyncTimeout("TRAKT_SYNC_TIMEOUT", c.Trakt.Sync.Timeout); err != nil {
+		return err
 	}
-	if !slices.Contains(validSyncModes(), string(*c.Sync.Mode)) {
-		return fmt.Errorf("field 'SYNC_MODE' must be one of: %s", strings.Join(validSyncModes(), ", "))
-	}
-	if c.TMDb.Enabled != nil && *c.TMDb.Enabled {
-		if isNilOrEmpty(c.TMDb.ReadAccessToken) {
-			return fmt.Errorf("field 'TMDB_READACCESSTOKEN' is required when 'TMDB_ENABLED' is true")
+	if *c.Trakt.Enabled {
+		if isNilOrEmpty(c.Trakt.ClientID) {
+			return fmt.Errorf("field 'TRAKT_CLIENTID' is required when 'TRAKT_ENABLED' is true")
 		}
-		if isNilOrEmpty(c.TMDb.SessionID) {
-			return fmt.Errorf("field 'TMDB_SESSIONID' is required when 'TMDB_ENABLED' is true")
+		if isNilOrEmpty(c.Trakt.ClientSecret) {
+			return fmt.Errorf("field 'TRAKT_CLIENTSECRET' is required when 'TRAKT_ENABLED' is true")
+		}
+	}
+	if err := validateSyncMode("TMDB_SYNC_MODE", c.TMDb.Sync.Mode); err != nil {
+		return err
+	}
+	if err := validateSyncTimeout("TMDB_SYNC_TIMEOUT", c.TMDb.Sync.Timeout); err != nil {
+		return err
+	}
+	if *c.TMDb.Enabled {
+		if *c.TMDb.Sync.History {
+			return fmt.Errorf("field 'TMDB_SYNC_HISTORY' cannot be enabled: TMDb does not expose an account watch-history API")
+		}
+		if *c.TMDb.Sync.Lists {
+			return fmt.Errorf("field 'TMDB_SYNC_LISTS' cannot be enabled with the current TMDb authentication model: mixed custom-list writes require TMDb v4 user-access-token support")
+		}
+		if *c.TMDb.Sync.Ratings || *c.TMDb.Sync.Watchlist {
+			if isNilOrEmpty(c.TMDb.ReadAccessToken) {
+				return fmt.Errorf("field 'TMDB_READACCESSTOKEN' is required when a TMDb sync feature is enabled")
+			}
+			if isNilOrEmpty(c.TMDb.SessionID) {
+				return fmt.Errorf("field 'TMDB_SESSIONID' is required when a TMDb sync feature is enabled")
+			}
 		}
 	}
 	return c.checkDummies()
+}
+
+func validateSyncMode(fieldName string, mode *SyncMode) error {
+	if mode == nil || *mode == "" {
+		return fmt.Errorf("field '%s' is required", fieldName)
+	}
+	if !slices.Contains(validSyncModes(), string(*mode)) {
+		return fmt.Errorf("field '%s' must be one of: %s", fieldName, strings.Join(validSyncModes(), ", "))
+	}
+	return nil
+}
+
+func validateSyncTimeout(fieldName string, timeout *time.Duration) error {
+	if timeout == nil || *timeout <= 0 {
+		return fmt.Errorf("field '%s' must be greater than zero", fieldName)
+	}
+	return nil
 }
 
 func (c *Config) validateListIdentifiers(lids []string) error {
@@ -178,8 +227,6 @@ func (c *Config) WriteFile(path string) error {
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return err
 	}
-	// os.WriteFile does not change the mode of an existing file, so tighten
-	// permissions explicitly after every write as well as on first creation.
 	return os.Chmod(path, 0o600)
 }
 
@@ -227,11 +274,34 @@ func (c *Config) applyDefaults() {
 	if c.IMDb.BrowserPath == nil {
 		c.IMDb.BrowserPath = pointer("")
 	}
+
+	if c.Trakt.Enabled == nil {
+		c.Trakt.Enabled = pointer(true)
+	}
 	if c.Trakt.TokenFile == nil || *c.Trakt.TokenFile == "" {
 		c.Trakt.TokenFile = pointer("trakt-token.json")
 	}
+	if c.Trakt.Sync.Mode == nil {
+		c.Trakt.Sync.Mode = legacyOrDefault(c.Sync.Mode, SyncModeAddOnly)
+	}
+	if c.Trakt.Sync.History == nil {
+		c.Trakt.Sync.History = legacyOrDefault(c.Sync.History, true)
+	}
+	if c.Trakt.Sync.Ratings == nil {
+		c.Trakt.Sync.Ratings = legacyOrDefault(c.Sync.Ratings, true)
+	}
+	if c.Trakt.Sync.Watchlist == nil {
+		c.Trakt.Sync.Watchlist = legacyOrDefault(c.Sync.Watchlist, true)
+	}
+	if c.Trakt.Sync.Lists == nil {
+		c.Trakt.Sync.Lists = legacyOrDefault(c.Sync.Lists, true)
+	}
+	if c.Trakt.Sync.Timeout == nil {
+		c.Trakt.Sync.Timeout = legacyOrDefault(c.Sync.Timeout, SyncTimeoutDefault)
+	}
+
 	if c.TMDb.Enabled == nil {
-		c.TMDb.Enabled = pointer(false)
+		c.TMDb.Enabled = pointer(true)
 	}
 	if c.TMDb.ReadAccessToken == nil {
 		c.TMDb.ReadAccessToken = pointer("")
@@ -239,24 +309,44 @@ func (c *Config) applyDefaults() {
 	if c.TMDb.SessionID == nil {
 		c.TMDb.SessionID = pointer("")
 	}
-	if c.Sync.Mode == nil {
-		c.Sync.Mode = pointer(SyncModeDryRun)
+	if c.TMDb.Sync.Mode == nil {
+		c.TMDb.Sync.Mode = legacyOrDefault(c.Sync.Mode, SyncModeAddOnly)
 	}
-	if c.Sync.History == nil {
-		c.Sync.History = pointer(false)
+	if c.TMDb.Sync.History == nil {
+		c.TMDb.Sync.History = pointer(false)
 	}
-	if c.Sync.Ratings == nil {
-		c.Sync.Ratings = pointer(true)
+	if c.TMDb.Sync.Ratings == nil {
+		c.TMDb.Sync.Ratings = legacyOrDefault(c.Sync.Ratings, true)
 	}
-	if c.Sync.Watchlist == nil {
-		c.Sync.Watchlist = pointer(true)
+	if c.TMDb.Sync.Watchlist == nil {
+		c.TMDb.Sync.Watchlist = pointer(true)
 	}
-	if c.Sync.Lists == nil {
-		c.Sync.Lists = pointer(true)
+	if c.TMDb.Sync.Lists == nil {
+		c.TMDb.Sync.Lists = pointer(false)
 	}
-	if c.Sync.Timeout == nil {
-		c.Sync.Timeout = pointer(SyncTimeoutDefault)
+	if c.TMDb.Sync.Timeout == nil {
+		c.TMDb.Sync.Timeout = legacyOrDefault(c.Sync.Timeout, SyncTimeoutDefault)
 	}
+
+	c.Trakt.SyncMode = c.Trakt.Sync.Mode
+	c.Trakt.SyncHistory = c.Trakt.Sync.History
+	c.Trakt.SyncRatings = c.Trakt.Sync.Ratings
+	c.Trakt.SyncWatchlist = c.Trakt.Sync.Watchlist
+	c.Trakt.SyncLists = c.Trakt.Sync.Lists
+	c.Trakt.SyncTimeout = c.Trakt.Sync.Timeout
+	c.TMDb.SyncMode = c.TMDb.Sync.Mode
+	c.TMDb.SyncHistory = c.TMDb.Sync.History
+	c.TMDb.SyncRatings = c.TMDb.Sync.Ratings
+	c.TMDb.SyncWatchlist = c.TMDb.Sync.Watchlist
+	c.TMDb.SyncLists = c.TMDb.Sync.Lists
+	c.TMDb.SyncTimeout = c.TMDb.Sync.Timeout
+}
+
+func legacyOrDefault[T any](legacy *T, fallback T) *T {
+	if legacy != nil {
+		return pointer(*legacy)
+	}
+	return pointer(fallback)
 }
 
 func pointer[T any](v T) *T {

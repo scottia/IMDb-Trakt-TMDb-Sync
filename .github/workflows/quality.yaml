@@ -3,6 +3,7 @@ on:
   push:
     branches:
     - main
+    - dev
   pull_request:
 permissions:
   contents: read
@@ -21,6 +22,17 @@ jobs:
       with:
         version: v2.4.0
         skip-cache: true
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v5
+    - name: Setup Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: 1.25.1
+    - name: Test
+      run: go test ./...
   build:
     runs-on: ubuntu-24.04
     steps:

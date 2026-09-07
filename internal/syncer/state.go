@@ -6,13 +6,14 @@ import (
 	"strings"
 	"time"
 
+	appconfig "github.com/cecobask/imdb-trakt-sync/internal/config"
 	"github.com/cecobask/imdb-trakt-sync/internal/syncstate"
 )
 
 const defaultStateReconcileInterval = 7 * 24 * time.Hour
 
 func (s *Syncer) prepareSyncState() error {
-	if !*s.conf.Ratings {
+	if !s.sourceRatings {
 		return nil
 	}
 	dir := strings.TrimSpace(os.Getenv("ITS_STATE_DIR"))
@@ -62,6 +63,23 @@ func (s *Syncer) prepareSyncState() error {
 		"remove", len(delta.Remove),
 	)
 	return nil
+}
+
+func (s *Syncer) shouldCommitSyncState() bool {
+	consumers := false
+	if *s.traktConf.Enabled && (*s.conf.Ratings || *s.conf.History) {
+		consumers = true
+		if *s.conf.Mode == appconfig.SyncModeDryRun {
+			return false
+		}
+	}
+	if *s.tmdbConf.Enabled && *s.tmdbConf.SyncRatings {
+		consumers = true
+		if *s.tmdbConf.SyncMode == appconfig.SyncModeDryRun {
+			return false
+		}
+	}
+	return consumers
 }
 
 func (s *Syncer) ratingDiff() diff {

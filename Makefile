@@ -14,7 +14,7 @@ sync: build
 
 sync-container:
 	touch trakt-token.json
-	docker run -it --rm --platform=linux/amd64 --env-file=.env -v $(CURDIR)/trakt-token.json:/app/trakt-token.json its:dev
+	docker run -it --rm --platform=linux/amd64 --env-file=.env -v $(CURDIR)/config.yaml:/app/config.yaml:ro -v $(CURDIR)/trakt-token.json:/app/trakt-token.json its:dev
 
 lint:
 	golangci-lint run
