@@ -36,6 +36,7 @@ type authTokensBody struct {
 	ClientID     string `json:"client_id"`
 	ClientSecret string `json:"client_secret"`
 	RefreshToken string `json:"refresh_token,omitempty"`
+	RedirectURI  string `json:"redirect_uri,omitempty"`
 	GrantType    string `json:"grant_type"`
 }
 
@@ -64,6 +65,9 @@ type accessToken struct {
 const (
 	grantTypeAuthorizationCode = "authorization_code"
 	grantTypeRefreshToken      = "refresh_token"
+	traktOAuthBaseURL          = "https://auth.trakt.tv"
+	traktOAuthTokenPath        = "/oauth/token"
+	traktOAuthRedirectURI      = "urn:ietf:wg:oauth:2.0:oob"
 )
 
 func newAuthClient(conf config.Trakt, transport http.RoundTripper) *authClient {
@@ -105,23 +109,19 @@ func (ac *authClient) getAuthCodes(ctx context.Context) (*authCodesResponse, err
 	return decodeJSON[*authCodesResponse](resp.Body)
 }
 
-func (ac *authClient) getAccessToken(ctx context.Context, grantType, secret string) (*accessToken, error) {
-	atb := authTokensBody{
+func (ac *authClient) refreshAccessToken(ctx context.Context, refreshToken string) (*accessToken, error) {
+	b, err := json.Marshal(authTokensBody{
 		ClientID:     *ac.conf.ClientID,
 		ClientSecret: *ac.conf.ClientSecret,
-		GrantType:    grantType,
-	}
-	if grantType == grantTypeAuthorizationCode {
-		atb.Code = secret
-	} else {
-		atb.RefreshToken = secret
-	}
-	b, err := json.Marshal(atb)
+		RefreshToken: refreshToken,
+		RedirectURI:  traktOAuthRedirectURI,
+		GrantType:    grantTypeRefreshToken,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failure marshaling auth tokens body: %w", err)
 	}
 	body := bytes.NewReader(b)
-	resp, err := doRequest(ctx, ac.client, http.MethodPost, ac.baseURL, pathAuthTokens, nil, body, nil, http.StatusOK)
+	resp, err := doRequest(ctx, ac.client, http.MethodPost, traktOAuthBaseURL, traktOAuthTokenPath, nil, body, nil, http.StatusOK)
 	if err != nil {
 		return nil, err
 	}
@@ -218,7 +218,7 @@ func (at *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 	}
 	if at.accessToken.isExpired() {
-		accessToken, err := at.authClient.getAccessToken(ctx, grantTypeRefreshToken, at.accessToken.refreshToken)
+		accessToken, err := at.authClient.refreshAccessToken(ctx, at.accessToken.refreshToken)
 		if err != nil {
 			return nil, fmt.Errorf("failure exchanging trakt refresh token for access token: %w", err)
 		}
