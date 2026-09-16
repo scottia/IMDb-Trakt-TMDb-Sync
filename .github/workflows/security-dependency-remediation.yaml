@@ -19,30 +19,23 @@ jobs:
         with:
           ref: dev
 
-      - name: Setup Go
+      - name: Setup patched Go
         uses: actions/setup-go@v6
         with:
-          go-version: 1.25.1
+          go-version: 1.25.13
 
-      - name: Show vulnerable dependency paths
+      - name: Apply security floors
         run: |
           set -euxo pipefail
-          go mod why -m golang.org/x/crypto || true
-          go mod why -m golang.org/x/net || true
-          go mod why -m github.com/quic-go/quic-go || true
-          go mod why -m github.com/cloudflare/circl || true
-          echo '--- graph edges ---'
-          go mod graph | grep -E 'golang.org/x/crypto|golang.org/x/net|github.com/quic-go/quic-go|github.com/cloudflare/circl' || true
-
-      - name: Apply fixed dependency floors
-        run: |
-          set -euxo pipefail
+          go mod edit -go=1.25.13
           go get golang.org/x/crypto@v0.52.0 \
                  golang.org/x/net@v0.55.0 \
+                 golang.org/x/text@v0.39.0 \
                  github.com/quic-go/quic-go@v0.59.1 \
                  github.com/cloudflare/circl@v1.6.3
           go mod tidy
-          git diff -- go.mod go.sum
+          sed -i 's/1\.25\.1/1.25.13/g' Dockerfile .github/workflows/quality.yaml .github/workflows/release.yaml examples/private-runner/sync.yaml
+          git diff -- Dockerfile go.mod go.sum .github/workflows/quality.yaml .github/workflows/release.yaml examples/private-runner/sync.yaml
 
       - name: Test
         run: go test ./...
@@ -61,15 +54,15 @@ jobs:
           go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
           govulncheck ./...
 
-      - name: Commit validated dependency update
+      - name: Commit validated security update
         run: |
           set -euxo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add go.mod go.sum
+          git add Dockerfile go.mod go.sum .github/workflows/quality.yaml .github/workflows/release.yaml examples/private-runner/sync.yaml
           if git diff --cached --quiet; then
-            echo 'No dependency changes required.'
+            echo 'No security changes required.'
             exit 0
           fi
-          git commit -m 'security: update vulnerable transitive Go dependencies'
+          git commit -m 'security: patch Go toolchain and transitive dependencies'
           git push origin HEAD:dev
