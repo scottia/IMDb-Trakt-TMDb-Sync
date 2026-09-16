@@ -110,6 +110,9 @@ func NewAPI(ctx context.Context, conf *config.IMDb, logger *slog.Logger) (API, e
 	if err = c.hydrate(); err != nil {
 		return nil, fmt.Errorf("failure hydrating client: %w", err)
 	}
+	if err = c.persistBrowserAuthCookies(); err != nil {
+		return nil, fmt.Errorf("failure persisting imdb authentication cookies: %w", err)
+	}
 	return c, nil
 }
 
@@ -125,7 +128,7 @@ func (c *client) authenticateUser() error {
 		if err != nil {
 			return fmt.Errorf("failure navigating and validating response: %w", err)
 		}
-		if err = setBrowserCookies(c.browser, *c.CookieAtMain); err != nil {
+		if err = c.seedBrowserAuthCookies(); err != nil {
 			return err
 		}
 		// Reload so the browser sends the now-set cookies to IMDb.
