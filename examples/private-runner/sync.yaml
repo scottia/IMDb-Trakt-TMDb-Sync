@@ -20,6 +20,7 @@ concurrency:
 
 env:
   ITS_IMDB_COOKIEATMAIN: ${{ secrets.IMDB_COOKIEATMAIN }}
+  ITS_IMDB_COOKIEJARFILE: ${{ github.workspace }}/imdb-cookie-jar.json
 
   ITS_TRAKT_CLIENTID: ${{ secrets.TRAKT_CLIENTID }}
   ITS_TRAKT_CLIENTSECRET: ${{ secrets.TRAKT_CLIENTSECRET }}
@@ -66,6 +67,17 @@ jobs:
         working-directory: app
         run: make build
 
+      - name: Seed IMDb cookie jar
+        env:
+          IMDB_COOKIE_JAR: ${{ secrets.IMDB_COOKIE_JAR }}
+        run: |
+          if [ -n "$IMDB_COOKIE_JAR" ]; then
+            printf '%s' "$IMDB_COOKIE_JAR" > "$ITS_IMDB_COOKIEJARFILE"
+            cp "$ITS_IMDB_COOKIEJARFILE" "$RUNNER_TEMP/imdb-cookie-jar.before.json"
+          else
+            echo "no IMDB_COOKIE_JAR secret set; IMDb will bootstrap from IMDB_COOKIEATMAIN and create a cookie jar after successful authentication"
+          fi
+
       - name: Seed Trakt token
         env:
           TRAKT_TOKEN: ${{ secrets.TRAKT_TOKEN }}
@@ -99,6 +111,25 @@ jobs:
           git fetch origin main
           git rebase origin/main
           git push origin HEAD:main
+
+      - name: Persist refreshed IMDb cookie jar
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          if [ ! -f "$ITS_IMDB_COOKIEJARFILE" ]; then
+            exit 0
+          fi
+          if [ -f "$RUNNER_TEMP/imdb-cookie-jar.before.json" ] && \
+             cmp -s "$RUNNER_TEMP/imdb-cookie-jar.before.json" "$ITS_IMDB_COOKIEJARFILE"; then
+            echo "IMDb cookie jar unchanged"
+            exit 0
+          fi
+          if [ -z "$GH_TOKEN" ]; then
+            echo "no GH_PAT secret set; cannot persist the refreshed IMDb cookie jar"
+            exit 1
+          fi
+          gh secret set IMDB_COOKIE_JAR --repo "$GITHUB_REPOSITORY" < "$ITS_IMDB_COOKIEJARFILE"
 
       - name: Persist rotated Trakt token
         if: always()
