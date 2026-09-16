@@ -86,16 +86,46 @@ Settings → Secrets and variables → Actions
 
 | Runner secret | Application variable | Required when | Purpose / how to obtain |
 | --- | --- | --- | --- |
-| `IMDB_COOKIEATMAIN` | `ITS_IMDB_COOKIEATMAIN` | Default IMDb cookie auth | Sign in to IMDb in a desktop browser, open Developer Tools → Application/Storage → Cookies → `https://www.imdb.com`, then copy the `at-main` cookie value. Treat it like a password. |
+| `IMDB_COOKIEATMAIN` | `ITS_IMDB_COOKIEATMAIN` | Default IMDb cookie auth / bootstrap fallback | Sign in to IMDb in a desktop browser, open Developer Tools → Application/Storage → Cookies → `https://www.imdb.com`, then copy the `at-main` cookie value. Treat it like a password. |
+| `IMDB_COOKIE_JAR` | Seeded into `ITS_IMDB_COOKIEJARFILE` | `/dev` unattended IMDb cookie recycling after the first successful bootstrap | **Do not create manually.** If absent, `/dev` bootstraps from `IMDB_COOKIEATMAIN`; after successful IMDb authentication and hydration, the Runner persists the allowlisted IMDb cookie jar to this secret and reuses it on later `/dev` runs. |
 | `TRAKT_CLIENTID` | `ITS_TRAKT_CLIENTID` | Trakt enabled | Create a Trakt API application at [Trakt API Apps](https://app.trakt.tv/settings/apps) and copy its Client ID. |
 | `TRAKT_CLIENTSECRET` | `ITS_TRAKT_CLIENTSECRET` | Trakt enabled | Copy the Client Secret from the same Trakt API application. |
-| `TRAKT_TOKEN` | Seeded into `TRAKT_TOKENFILE` | Unattended Trakt runs after first authorization | Do not create manually. On the first run, follow the device-code authorization shown in the workflow log. The Runner persists the resulting/rotated OAuth token back to this secret. |
+| `TRAKT_TOKEN` | Seeded into `TRAKT_TOKENFILE` | Unattended Trakt runs after first authorization | Do not create manually. On the first run, follow the device-code authorization shown in the workflow log. Normal refreshes use Trakt's OAuth token endpoint and the Runner persists the replacement access/refresh token pair back to this secret. |
 | `TMDB_READ_ACCESS_TOKEN` | `ITS_TMDB_READACCESSTOKEN` | TMDb enabled | Create/approve TMDb API access under [TMDb API settings](https://www.themoviedb.org/settings/api) and copy the API Read Access Token. |
 | `TMDB_SESSION_ID` | `ITS_TMDB_SESSIONID` | TMDb enabled | Use TMDb v3 user authentication: create a request token, authorize it in a browser, then create a session ID. See [TMDb session authentication](https://developer.themoviedb.org/reference/authentication-how-do-i-generate-a-session-id). |
-| `GH_PAT` | Runner-only | Trakt token rotation | Fine-grained PAT scoped only to the private Runner with **Secrets: Read and write**. Used only to update `TRAKT_TOKEN`. |
+| `GH_PAT` | Runner-only | Trakt token rotation and `/dev` IMDb cookie-jar persistence | Fine-grained PAT scoped only to the private Runner with **Secrets: Read and write**. Used only to update Runner-managed authentication secrets. |
 | `STATUS_PAT` | Runner-only | Optional public sync badge | Separate fine-grained PAT scoped only to the public source repository with **Contents: Read and write**. Used only for the status `repository_dispatch`. |
 
 IMDb credential authentication is also supported for local use by setting `IMDB.AUTH: credentials` in `config.yaml` and supplying `ITS_IMDB_EMAIL` / `ITS_IMDB_PASSWORD`. Browser/CAPTCHA challenges can make that less suitable for unattended Actions.
+
+### IMDb cookie-session recycling (`dev`)
+
+> [!NOTE]
+> This cookie-jar lifecycle is currently staged on the `dev` branch. Production `main` continues to use `IMDB_COOKIEATMAIN` directly until the feature is validated and promoted.
+
+The `/dev` Runner does not require a hand-built `IMDB_COOKIE_JAR`. The first successful run is self-bootstrapping:
+
+```text
+existing IMDB_COOKIEATMAIN secret
+        ↓
+seed Chrome
+        ↓
+authenticate successfully
+        ↓
+hydrate the IMDb client successfully
+        ↓
+capture current allowlisted IMDb cookies
+        ↓
+write imdb-cookie-jar.json
+        ↓
+Runner creates/updates IMDB_COOKIE_JAR
+        ↓
+next /dev run seeds Chrome from the persisted jar
+```
+
+The application writes the jar only after both IMDb authentication and client hydration succeed. The Runner compares the resulting file with the seeded copy and updates `IMDB_COOKIE_JAR` only when the jar actually changed. If the persisted jar is missing or cannot be loaded, `/dev` falls back to the existing `IMDB_COOKIEATMAIN` bootstrap path.
+
+Only allowlisted IMDb-domain authentication cookies are retained. Amazon-domain cookies, the general Chrome profile, and the generated `aws-waf-token` are not persisted. Cookie values are never intentionally written to logs. The jar preserves session continuity across ephemeral Actions runners; it does not create an IMDb refresh-token API, so IMDb can still require a fresh interactive cookie bootstrap if it invalidates the session server-side.
 
 ## Private GitHub Actions Runner
 
@@ -118,17 +148,17 @@ PRIVATE RUNNER REPOSITORY
     └── tmdb-id-map.json
 ```
 
-A ready-to-copy workflow is provided at [`examples/private-runner/sync.yaml`](examples/private-runner/sync.yaml).
+A ready-to-copy production workflow is provided at [`examples/private-runner/sync.yaml`](examples/private-runner/sync.yaml). The checked-in example follows production `main`; the IMDb cookie-jar plumbing described above remains `/dev`-only until promotion.
 
 ### Runner setup
 
 1. Create a separate private Runner repository and initialize `main`.
 2. Copy `examples/private-runner/sync.yaml` to `.github/workflows/sync.yaml` in the private Runner.
 3. Copy this repository's `config.yaml` to the private Runner and customize non-secret behavior there.
-4. Add only the required secrets from the table above.
+4. Add only the required secrets from the table above. Do not manually create `TRAKT_TOKEN` or `IMDB_COOKIE_JAR`; those are Runner-managed after their respective bootstrap flows.
 5. Manually dispatch the first run. If Trakt has no `TRAKT_TOKEN` yet, authorize the displayed device code.
 
-The Runner workflow passes only sensitive credentials to the application:
+The production Runner workflow passes only sensitive credentials to the application:
 
 ```yaml
 env:
@@ -141,6 +171,8 @@ env:
   ITS_TMDB_READACCESSTOKEN: ${{ secrets.TMDB_READ_ACCESS_TOKEN }}
   ITS_TMDB_SESSIONID: ${{ secrets.TMDB_SESSION_ID }}
 ```
+
+On `/dev`, the private Runner additionally sets `ITS_IMDB_COOKIEJARFILE` to an ephemeral workspace file, seeds that file from the `IMDB_COOKIE_JAR` repository secret when present, and persists a changed jar back to the same secret after the application has produced a valid authenticated jar.
 
 All destination switches, modes, feature choices, list IDs, tracing behavior, and timeouts belong in private `config.yaml`, not in dozens of GitHub Actions secrets.
 
@@ -169,6 +201,8 @@ make sync-container
 
 The container uses `config.yaml` and the untracked `.env` at runtime.
 
+On `dev`, local cookie-auth users may set `ITS_IMDB_COOKIEJARFILE` to a protected local path to retain the same allowlisted IMDb session cookies between runs. `ITS_IMDB_COOKIEATMAIN` remains the bootstrap/fallback credential.
+
 ## Persistent ratings state
 
 The private Runner stores persistent source state under `state/`. `ITS_STATE_DIR` and `ITS_STATE_RECONCILEINTERVAL` remain runtime-only environment settings because their paths/cadence are Runner operational details rather than destination policy.
@@ -183,7 +217,7 @@ The public relay workflow is [`.github/workflows/runner-sync-status.yaml`](.gith
 
 For a fork, change both the source checkout `repository:` value and `STATUS_REPOSITORY` in the Runner's `publish-status` job.
 
-Keep `GH_PAT` and `STATUS_PAT` separate: `GH_PAT` is scoped to the private Runner for Trakt-token rotation; `STATUS_PAT` is scoped to the public source repository only for status publication.
+Keep `GH_PAT` and `STATUS_PAT` separate: `GH_PAT` is scoped to the private Runner for Runner-managed authentication-secret updates; `STATUS_PAT` is scoped to the public source repository only for status publication.
 
 ## Development
 
@@ -194,6 +228,8 @@ make lint
 ```
 
 Public `quality` CI runs lint, tests, and build on `main`, `dev`, and pull requests.
+
+For this repository's private Runner pairing, scheduled production runs select Runner `main` and application source `main`. A manual Runner dispatch with the workflow branch set to `dev` selects Runner `dev` and application source `dev`, which is the path used to validate staged features such as IMDb cookie-session recycling without changing the scheduled production branch.
 
 ## License
 
