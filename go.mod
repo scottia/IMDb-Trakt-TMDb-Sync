@@ -1,6 +1,6 @@
 module github.com/scottia/IMDb-Trakt-TMDb-Sync
 
-go 1.25.1
+go 1.25.13
 
 require (
 	github.com/cecobask/awswaf v0.0.0-20260725211019-1514ae79b911
@@ -58,7 +58,7 @@ require (
 	golang.org/x/crypto v0.52.0 // indirect
 	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/sys v0.45.0 // indirect
-	golang.org/x/text v0.37.0 // indirect
+	golang.org/x/text v0.39.0 // indirect
 )
 
 replace github.com/ysmood/fetchup => github.com/ysmood/fetchup v0.3.0
