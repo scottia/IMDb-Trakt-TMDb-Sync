@@ -1,0 +1,76 @@
+name: security dependency remediation
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - .github/workflows/security-dependency-remediation.yaml
+
+permissions:
+  contents: write
+
+jobs:
+  remediate:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out dev
+        uses: actions/checkout@v5
+        with:
+          ref: dev
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: 1.25.1
+
+      - name: Show vulnerable dependency paths
+        run: |
+          set -euxo pipefail
+          go mod why -m golang.org/x/crypto || true
+          go mod why -m golang.org/x/net || true
+          go mod why -m github.com/quic-go/quic-go || true
+          go mod why -m github.com/cloudflare/circl || true
+          echo '--- graph edges ---'
+          go mod graph | grep -E 'golang.org/x/crypto|golang.org/x/net|github.com/quic-go/quic-go|github.com/cloudflare/circl' || true
+
+      - name: Apply fixed dependency floors
+        run: |
+          set -euxo pipefail
+          go get golang.org/x/crypto@v0.52.0 \
+                 golang.org/x/net@v0.55.0 \
+                 github.com/quic-go/quic-go@v0.59.1 \
+                 github.com/cloudflare/circl@v1.6.3
+          go mod tidy
+          git diff -- go.mod go.sum
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build
+        run: make build
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.4.0
+          skip-cache: true
+
+      - name: Vulnerability reachability scan
+        continue-on-error: true
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+      - name: Commit validated dependency update
+        run: |
+          set -euxo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add go.mod go.sum
+          if git diff --cached --quiet; then
+            echo 'No dependency changes required.'
+            exit 0
+          fi
+          git commit -m 'security: update vulnerable transitive Go dependencies'
+          git push origin HEAD:dev
