@@ -141,12 +141,12 @@ func (c *client) authenticateUser() error {
 		if err = c.handleWafChallenge(tab); err != nil {
 			return fmt.Errorf("failure handling waf challenge after reload: %w", err)
 		}
-		authenticated, _, err := tab.Has("#navUserMenu")
-		if err != nil {
-			return fmt.Errorf("failure checking nav user menu: %w", err)
-		}
-		if !authenticated {
-			return fmt.Errorf("failure authenticating with the provided cookies")
+		// IMDb's client-rendered navigation can hydrate just after a WAF reload.
+		// Wait for the authenticated menu instead of treating an immediate miss
+		// as an invalid cookie session.
+		const cookieAuthTimeout = 15 * time.Second
+		if _, err = tab.Timeout(cookieAuthTimeout).Element("#navUserMenu"); err != nil {
+			return fmt.Errorf("failure authenticating with the provided cookies after waiting %s: %w", cookieAuthTimeout, err)
 		}
 		return nil
 	}
