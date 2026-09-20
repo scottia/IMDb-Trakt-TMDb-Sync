@@ -141,13 +141,10 @@ func (c *client) authenticateUser() error {
 		if err = c.handleWafChallenge(tab); err != nil {
 			return fmt.Errorf("failure handling waf challenge after reload: %w", err)
 		}
-		// IMDb's client-rendered navigation can hydrate just after a WAF reload.
-		// Wait for the authenticated menu instead of treating an immediate miss
-		// as an invalid cookie session.
-		const cookieAuthTimeout = 15 * time.Second
-		if _, err = tab.Timeout(cookieAuthTimeout).Element("#navUserMenu"); err != nil {
-			return fmt.Errorf("failure authenticating with the provided cookies after waiting %s: %w", cookieAuthTimeout, err)
-		}
+		// Do not use the client-rendered navbar as cookie-auth authority. After a
+		// WAF reload IMDb can omit that cosmetic element even when the session is
+		// valid. hydrate() performs the authoritative check by navigating to the
+		// authenticated watchlist and requiring non-empty user and watchlist IDs.
 		return nil
 	}
 	tab, err := c.navigateAndValidateResponse(c.baseURL + pathSignIn)
@@ -394,7 +391,7 @@ func (c *client) listDownload(resource *rod.Element) (*List, error) {
 	}
 	listName, err := hyperlink.Text()
 	if err != nil {
-		return nil, fmt.Errorf("failure extracting list name from hyperlink: %w", err)
+		return nil, fmt.Errorf("failure extracting list name: %w", err)
 	}
 	downloadButton, err := resource.Element("button[data-testid='export-status-button']")
 	if err != nil {
@@ -747,7 +744,6 @@ func isTitlesList(header []string) bool {
 		"Release Date",
 		"Directors",
 		"Your Rating",
-		"Date Rated",
 	})
 }
 
