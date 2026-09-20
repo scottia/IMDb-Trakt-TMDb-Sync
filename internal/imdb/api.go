@@ -391,7 +391,7 @@ func (c *client) listDownload(resource *rod.Element) (*List, error) {
 	}
 	listName, err := hyperlink.Text()
 	if err != nil {
-		return nil, fmt.Errorf("failure extracting list name: %w", err)
+		return nil, fmt.Errorf("failure extracting list name from hyperlink: %w", err)
 	}
 	downloadButton, err := resource.Element("button[data-testid='export-status-button']")
 	if err != nil {
@@ -744,6 +744,7 @@ func isTitlesList(header []string) bool {
 		"Release Date",
 		"Directors",
 		"Your Rating",
+		"Date Rated",
 	})
 }
 
