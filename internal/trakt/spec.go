@@ -75,6 +75,28 @@ func (its Items) toListBody() listBody {
 	return lb
 }
 
+func (its Items) toRatingsBody() listBody {
+	lb := listBody{}
+	for _, item := range its {
+		switch item.Type {
+		case ItemTypeMovie:
+			lb.Movies = append(lb.Movies, ratingsItemSpec(item.Movie))
+		case ItemTypeShow:
+			lb.Shows = append(lb.Shows, ratingsItemSpec(item.Show))
+		case ItemTypeEpisode:
+			lb.Episodes = append(lb.Episodes, ratingsItemSpec(item.Episode))
+		case ItemTypePerson:
+			lb.People = append(lb.People, ratingsItemSpec(item.Person))
+		}
+	}
+	return lb
+}
+
+func ratingsItemSpec(item ItemSpec) ItemSpec {
+	item.WatchedAt = nil
+	return item
+}
+
 type ItemSpec struct {
 	IDMeta    IDMeta   `json:"ids"`
 	RatedAt   *string  `json:"rated_at,omitempty"`
