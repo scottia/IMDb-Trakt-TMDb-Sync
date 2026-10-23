@@ -94,9 +94,19 @@ func NewAPI(ctx context.Context, conf config.Trakt, logger *slog.Logger) (API, e
 // and POSTs each chunk to path in turn, merging the per-chunk responses into
 // a single result so callers can log/handle it as if it were one request.
 func (c *client) postItemsChunked(ctx context.Context, path string, its Items, statusCode int) (response, error) {
+	return c.postItemsChunkedWithBody(ctx, path, its, statusCode, Items.toListBody)
+}
+
+func (c *client) postItemsChunkedWithBody(
+	ctx context.Context,
+	path string,
+	its Items,
+	statusCode int,
+	body func(Items) listBody,
+) (response, error) {
 	merged := response{}
 	for chunk := range slices.Chunk(its, bulkRequestChunkSize) {
-		b, err := json.Marshal(chunk.toListBody())
+		b, err := json.Marshal(body(chunk))
 		if err != nil {
 			return response{}, fmt.Errorf("failure marshaling items: %w", err)
 		}
@@ -278,48 +288,11 @@ func (c *client) ListsGetAllMeta(ctx context.Context) (Lists, error) {
 }
 
 func (c *client) RatingsAdd(ctx context.Context, its Items) error {
-	// DEV DIAGNOSTIC: submit rating additions one item at a time and continue
-	// after rejections so we can enumerate every IMDb item Trakt refuses.
-	// Keep this scoped to RatingsAdd; other bulk endpoints retain normal
-	// chunking behavior.
-	c.logger.Info("trakt ratings diagnostic starting", "items", len(its))
-	merged := response{}
-	failures := 0
-	var firstErr error
-	for i := range its {
-		item := its[i]
-		itemID := ""
-		if id, idErr := item.GetItemID(); idErr != nil {
-			itemID = "<id-error:" + idErr.Error() + ">"
-		} else if id != nil {
-			itemID = *id
-		}
-
-		payload, _ := json.Marshal(Items{item}.toListBody())
-		r, err := c.postItemsChunked(ctx, pathRatings, Items{item}, http.StatusCreated)
-		if err != nil {
-			failures++
-			if firstErr == nil {
-				firstErr = err
-			}
-			c.logger.Error(
-				"trakt ratings diagnostic item rejected",
-				"index", i+1,
-				"total", len(its),
-				"type", item.Type,
-				"imdb", itemID,
-				"payload", string(payload),
-				"error", err,
-			)
-			continue
-		}
-		merged.merge(r)
+	r, err := c.postItemsChunkedWithBody(ctx, pathRatings, its, http.StatusCreated, Items.toRatingsBody)
+	if err != nil {
+		return err
 	}
-	c.logger.Info("trakt ratings diagnostic completed", "items", len(its), "rejected", failures)
-	if failures > 0 {
-		return fmt.Errorf("trakt ratings diagnostic found %d rejected items; first rejection: %w", failures, firstErr)
-	}
-	c.logger.Info("added trakt ratings", "items", merged)
+	c.logger.Info("added trakt ratings", "items", r)
 	return nil
 }
 
