@@ -31,7 +31,7 @@ func (it *Item) ToTraktItem() trakt.Item {
 		},
 	}
 	if it.Rating != nil {
-		ratedAt := it.Created.UTC().String()
+		ratedAt := it.Created.UTC().Format(time.RFC3339)
 		tiSpec.RatedAt = &ratedAt
 		tiSpec.WatchedAt = &ratedAt
 		tiSpec.Rating = it.Rating
