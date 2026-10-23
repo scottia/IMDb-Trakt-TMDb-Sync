@@ -94,9 +94,19 @@ func NewAPI(ctx context.Context, conf config.Trakt, logger *slog.Logger) (API, e
 // and POSTs each chunk to path in turn, merging the per-chunk responses into
 // a single result so callers can log/handle it as if it were one request.
 func (c *client) postItemsChunked(ctx context.Context, path string, its Items, statusCode int) (response, error) {
+	return c.postItemsChunkedWithBody(ctx, path, its, statusCode, Items.toListBody)
+}
+
+func (c *client) postItemsChunkedWithBody(
+	ctx context.Context,
+	path string,
+	its Items,
+	statusCode int,
+	body func(Items) listBody,
+) (response, error) {
 	merged := response{}
 	for chunk := range slices.Chunk(its, bulkRequestChunkSize) {
-		b, err := json.Marshal(chunk.toListBody())
+		b, err := json.Marshal(body(chunk))
 		if err != nil {
 			return response{}, fmt.Errorf("failure marshaling items: %w", err)
 		}
@@ -278,7 +288,7 @@ func (c *client) ListsGetAllMeta(ctx context.Context) (Lists, error) {
 }
 
 func (c *client) RatingsAdd(ctx context.Context, its Items) error {
-	r, err := c.postItemsChunked(ctx, pathRatings, its, http.StatusCreated)
+	r, err := c.postItemsChunkedWithBody(ctx, pathRatings, its, http.StatusCreated, Items.toRatingsBody)
 	if err != nil {
 		return err
 	}
