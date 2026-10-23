@@ -278,11 +278,37 @@ func (c *client) ListsGetAllMeta(ctx context.Context) (Lists, error) {
 }
 
 func (c *client) RatingsAdd(ctx context.Context, its Items) error {
-	r, err := c.postItemsChunked(ctx, pathRatings, its, http.StatusCreated)
-	if err != nil {
-		return err
+	// DEV DIAGNOSTIC: submit rating additions one item at a time so a Trakt
+	// invalid_request_body response identifies the exact IMDb item/payload.
+	// Keep this scoped to RatingsAdd; other bulk endpoints retain normal
+	// chunking behavior.
+	c.logger.Info("trakt ratings diagnostic starting", "items", len(its))
+	merged := response{}
+	for i := range its {
+		item := its[i]
+		itemID := ""
+		if id, idErr := item.GetItemID(); idErr != nil {
+			itemID = "<id-error:" + idErr.Error() + ">"
+		} else if id != nil {
+			itemID = *id
+		}
+
+		payload, _ := json.Marshal(Items{item}.toListBody())
+		r, err := c.postItemsChunked(ctx, pathRatings, Items{item}, http.StatusCreated)
+		if err != nil {
+			return fmt.Errorf(
+				"trakt ratings diagnostic item failed: index=%d total=%d type=%s imdb=%s payload=%s: %w",
+				i+1,
+				len(its),
+				item.Type,
+				itemID,
+				string(payload),
+				err,
+			)
+		}
+		merged.merge(r)
 	}
-	c.logger.Info("added trakt ratings", "items", r)
+	c.logger.Info("added trakt ratings", "items", merged)
 	return nil
 }
 
