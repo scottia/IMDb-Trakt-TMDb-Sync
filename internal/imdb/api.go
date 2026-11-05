@@ -727,10 +727,23 @@ func (c *client) handleWafChallenge(tab *rod.Page) error {
 	if err := tab.WaitLoad(); err != nil {
 		return fmt.Errorf("failure waiting for tab to load after waf challenge: %w", err)
 	}
-	c.logger.Info("solved aws waf challenge")
-	c.logIMDbPageState(tab, "post-waf")
 
-	return nil
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		stillPresent, _, hasErr := tab.Has(selectorWAF)
+		if hasErr != nil {
+			return fmt.Errorf("failure verifying aws waf challenge clearance: %w", hasErr)
+		}
+		if !stillPresent {
+			c.logger.Info("solved aws waf challenge")
+			c.logIMDbPageState(tab, "post-waf")
+			return nil
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+
+	c.logIMDbPageState(tab, "post-waf-still-blocked")
+	return fmt.Errorf("aws waf challenge remained after solver token and reload")
 }
 
 func (c *client) logIMDbPageState(tab *rod.Page, stage string) {
