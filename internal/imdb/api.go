@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"regexp"
 	"slices"
 	"strconv"
@@ -54,6 +55,8 @@ const (
 	selectorNextData           = "#__NEXT_DATA__"
 	selectorPrivateListContent = "div[data-testid='list-page-mc-private-list-content']"
 	selectorWAF                = "script[src*='token.awswaf.com']"
+
+	envWAFBrowserNative = "ITS_IMDB_WAF_BROWSER_NATIVE"
 )
 
 type client struct {
@@ -664,6 +667,26 @@ func (c *client) handleWafChallenge(tab *rod.Page) error {
 	if !hasChallenge {
 		return nil
 	}
+
+	if strings.EqualFold(strings.TrimSpace(os.Getenv(envWAFBrowserNative)), "true") {
+		c.logger.Info("detected aws waf challenge, waiting for browser-native resolution")
+		deadline := time.Now().Add(20 * time.Second)
+		for time.Now().Before(deadline) {
+			time.Sleep(500 * time.Millisecond)
+			stillPresent, _, hasErr := tab.Has(selectorWAF)
+			if hasErr != nil {
+				return fmt.Errorf("failure checking browser-native waf selector: %w", hasErr)
+			}
+			if !stillPresent {
+				c.logger.Info("browser-native aws waf challenge cleared")
+				c.logIMDbPageState(tab, "post-waf-browser-native")
+				return nil
+			}
+		}
+		c.logIMDbPageState(tab, "browser-native-waf-timeout")
+		return fmt.Errorf("browser-native aws waf challenge did not clear within 20s")
+	}
+
 	c.logger.Info("detected aws waf challenge, starting solver")
 
 	version, err := tab.Browser().Version()
