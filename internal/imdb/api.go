@@ -47,6 +47,7 @@ const (
 
 	selectorActionsMenu        = "ul[data-testid='hero-list-subnav-actions-menu']"
 	selectorActionsMenuButton  = "button[data-testid='hero-list-subnav-actions-menu-button']"
+	selectorAmazonSignIn       = "#ap_email, #ap_password, #signInSubmit, #authportal-main-section"
 	selectorErrorPageTitle     = "h1[data-testid='error-page-title']"
 	selectorExportButton       = "div[data-testid='hero-list-subnav-export-button'] button"
 	selectorListHyperlink      = "a.ipc-metadata-list-summary-item__t"
@@ -203,8 +204,10 @@ func (c *client) hydrate() error {
 	if err != nil {
 		return fmt.Errorf("failure navigating and validating response: %w", err)
 	}
-	script, err := tab.Element(selectorNextData)
+	c.logIMDbPageState(tab, "hydrate-watchlist")
+	script, err := tab.Timeout(30 * time.Second).Element(selectorNextData)
 	if err != nil {
+		c.logIMDbPageState(tab, "hydrate-next-data-timeout")
 		return fmt.Errorf("failure finding next data element: %w", err)
 	}
 	text, err := script.Text()
@@ -702,8 +705,43 @@ func (c *client) handleWafChallenge(tab *rod.Page) error {
 		return fmt.Errorf("failure waiting for tab to load after waf challenge: %w", err)
 	}
 	c.logger.Info("solved aws waf challenge")
+	c.logIMDbPageState(tab, "post-waf")
 
 	return nil
+}
+
+func (c *client) logIMDbPageState(tab *rod.Page, stage string) {
+	info, infoErr := tab.Info()
+	url := ""
+	title := ""
+	if infoErr == nil && info != nil {
+		url = info.URL
+		title = info.Title
+	}
+
+	hasNextData, _, nextDataErr := tab.Has(selectorNextData)
+	hasWAF, _, wafErr := tab.Has(selectorWAF)
+	hasAmazonSignIn, _, amazonSignInErr := tab.Has(selectorAmazonSignIn)
+	hasErrorPage, _, errorPageErr := tab.Has(selectorErrorPageTitle)
+	hasPrivateList, _, privateListErr := tab.Has(selectorPrivateListContent)
+
+	c.logger.Info(
+		"imdb page state",
+		"stage", stage,
+		"url", url,
+		"title", title,
+		"next_data", hasNextData,
+		"waf", hasWAF,
+		"amazon_signin", hasAmazonSignIn,
+		"error_page", hasErrorPage,
+		"private_list", hasPrivateList,
+		"info_error", infoErr != nil,
+		"next_data_error", nextDataErr != nil,
+		"waf_error", wafErr != nil,
+		"amazon_signin_error", amazonSignInErr != nil,
+		"error_page_error", errorPageErr != nil,
+		"private_list_error", privateListErr != nil,
+	)
 }
 
 // localePrefix matches the optional locale segment of a localized IMDb path: /fr/, /de/, /en-us/, /pt-br/...
