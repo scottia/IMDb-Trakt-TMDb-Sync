@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"regexp"
 	"slices"
 	"strconv"
@@ -47,12 +48,15 @@ const (
 
 	selectorActionsMenu        = "ul[data-testid='hero-list-subnav-actions-menu']"
 	selectorActionsMenuButton  = "button[data-testid='hero-list-subnav-actions-menu-button']"
+	selectorAmazonSignIn       = "#ap_email, #ap_password, #signInSubmit, #authportal-main-section"
 	selectorErrorPageTitle     = "h1[data-testid='error-page-title']"
 	selectorExportButton       = "div[data-testid='hero-list-subnav-export-button'] button"
 	selectorListHyperlink      = "a.ipc-metadata-list-summary-item__t"
 	selectorNextData           = "#__NEXT_DATA__"
 	selectorPrivateListContent = "div[data-testid='list-page-mc-private-list-content']"
 	selectorWAF                = "script[src*='token.awswaf.com']"
+
+	envWAFBrowserNative = "ITS_IMDB_WAF_BROWSER_NATIVE"
 )
 
 type client struct {
@@ -203,8 +207,10 @@ func (c *client) hydrate() error {
 	if err != nil {
 		return fmt.Errorf("failure navigating and validating response: %w", err)
 	}
-	script, err := tab.Element(selectorNextData)
+	c.logIMDbPageState(tab, "hydrate-watchlist")
+	script, err := tab.Timeout(30 * time.Second).Element(selectorNextData)
 	if err != nil {
+		c.logIMDbPageState(tab, "hydrate-next-data-timeout")
 		return fmt.Errorf("failure finding next data element: %w", err)
 	}
 	text, err := script.Text()
@@ -661,6 +667,26 @@ func (c *client) handleWafChallenge(tab *rod.Page) error {
 	if !hasChallenge {
 		return nil
 	}
+
+	if strings.EqualFold(strings.TrimSpace(os.Getenv(envWAFBrowserNative)), "true") {
+		c.logger.Info("detected aws waf challenge, waiting for browser-native resolution")
+		deadline := time.Now().Add(20 * time.Second)
+		for time.Now().Before(deadline) {
+			time.Sleep(500 * time.Millisecond)
+			stillPresent, _, hasErr := tab.Has(selectorWAF)
+			if hasErr != nil {
+				return fmt.Errorf("failure checking browser-native waf selector: %w", hasErr)
+			}
+			if !stillPresent {
+				c.logger.Info("browser-native aws waf challenge cleared")
+				c.logIMDbPageState(tab, "post-waf-browser-native")
+				return nil
+			}
+		}
+		c.logIMDbPageState(tab, "browser-native-waf-timeout")
+		return fmt.Errorf("browser-native aws waf challenge did not clear within 20s")
+	}
+
 	c.logger.Info("detected aws waf challenge, starting solver")
 
 	version, err := tab.Browser().Version()
@@ -701,9 +727,57 @@ func (c *client) handleWafChallenge(tab *rod.Page) error {
 	if err := tab.WaitLoad(); err != nil {
 		return fmt.Errorf("failure waiting for tab to load after waf challenge: %w", err)
 	}
-	c.logger.Info("solved aws waf challenge")
 
-	return nil
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		stillPresent, _, hasErr := tab.Has(selectorWAF)
+		if hasErr != nil {
+			return fmt.Errorf("failure verifying aws waf challenge clearance: %w", hasErr)
+		}
+		if !stillPresent {
+			c.logger.Info("solved aws waf challenge")
+			c.logIMDbPageState(tab, "post-waf")
+			return nil
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+
+	c.logIMDbPageState(tab, "post-waf-still-blocked")
+	return fmt.Errorf("aws waf challenge remained after solver token and reload")
+}
+
+func (c *client) logIMDbPageState(tab *rod.Page, stage string) {
+	info, infoErr := tab.Info()
+	url := ""
+	title := ""
+	if infoErr == nil && info != nil {
+		url = info.URL
+		title = info.Title
+	}
+
+	hasNextData, _, nextDataErr := tab.Has(selectorNextData)
+	hasWAF, _, wafErr := tab.Has(selectorWAF)
+	hasAmazonSignIn, _, amazonSignInErr := tab.Has(selectorAmazonSignIn)
+	hasErrorPage, _, errorPageErr := tab.Has(selectorErrorPageTitle)
+	hasPrivateList, _, privateListErr := tab.Has(selectorPrivateListContent)
+
+	c.logger.Info(
+		"imdb page state",
+		"stage", stage,
+		"url", url,
+		"title", title,
+		"next_data", hasNextData,
+		"waf", hasWAF,
+		"amazon_signin", hasAmazonSignIn,
+		"error_page", hasErrorPage,
+		"private_list", hasPrivateList,
+		"info_error", infoErr != nil,
+		"next_data_error", nextDataErr != nil,
+		"waf_error", wafErr != nil,
+		"amazon_signin_error", amazonSignInErr != nil,
+		"error_page_error", errorPageErr != nil,
+		"private_list_error", privateListErr != nil,
+	)
 }
 
 // localePrefix matches the optional locale segment of a localized IMDb path: /fr/, /de/, /en-us/, /pt-br/...
