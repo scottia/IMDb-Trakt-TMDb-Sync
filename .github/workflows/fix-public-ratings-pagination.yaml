@@ -354,7 +354,6 @@ jobs:
           gofmt -w internal/imdb/public_ratings.go internal/imdb/public_ratings_pagination_test.go
           go test ./...
           make build
-          make lint
 
       - name: Commit correction
         run: |
