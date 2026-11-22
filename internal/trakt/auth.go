@@ -36,7 +36,6 @@ type authTokensBody struct {
 	ClientID     string `json:"client_id"`
 	ClientSecret string `json:"client_secret"`
 	RefreshToken string `json:"refresh_token,omitempty"`
-	RedirectURI  string `json:"redirect_uri,omitempty"`
 	GrantType    string `json:"grant_type"`
 }
 
@@ -65,14 +64,16 @@ type accessToken struct {
 const (
 	grantTypeAuthorizationCode = "authorization_code"
 	grantTypeRefreshToken      = "refresh_token"
-	traktOAuthBaseURL          = "https://auth.trakt.tv"
-	traktOAuthTokenPath        = "/oauth/token"
-	traktOAuthRedirectURI      = "urn:ietf:wg:oauth:2.0:oob"
+
+	traktAuthBaseURL   = "https://auth.trakt.tv"
+	pathAuthCodes      = "/oauth/device/code"
+	pathAuthTokens     = "/oauth/device/token"
+	pathAuthToken      = "/oauth/token"
 )
 
 func newAuthClient(conf config.Trakt, transport http.RoundTripper) *authClient {
 	return &authClient{
-		baseURL: pathBaseAPI,
+		baseURL: traktAuthBaseURL,
 		client: &http.Client{
 			Transport: transport,
 		},
@@ -114,14 +115,13 @@ func (ac *authClient) refreshAccessToken(ctx context.Context, refreshToken strin
 		ClientID:     *ac.conf.ClientID,
 		ClientSecret: *ac.conf.ClientSecret,
 		RefreshToken: refreshToken,
-		RedirectURI:  traktOAuthRedirectURI,
 		GrantType:    grantTypeRefreshToken,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failure marshaling auth tokens body: %w", err)
 	}
 	body := bytes.NewReader(b)
-	resp, err := doRequest(ctx, ac.client, http.MethodPost, traktOAuthBaseURL, traktOAuthTokenPath, nil, body, nil, http.StatusOK)
+	resp, err := doRequest(ctx, ac.client, http.MethodPost, ac.baseURL, pathAuthToken, nil, body, nil, http.StatusOK)
 	if err != nil {
 		return nil, err
 	}
