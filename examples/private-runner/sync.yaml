@@ -20,6 +20,7 @@ concurrency:
 
 env:
   ITS_IMDB_COOKIEATMAIN: ${{ secrets.IMDB_COOKIEATMAIN }}
+  ITS_IMDB_RATINGSUSERLIST: ${{ secrets.IMDB_RATINGS_USER_LIST }}
   ITS_IMDB_COOKIEJARFILE: ${{ github.workspace }}/imdb-cookie-jar.json
 
   ITS_TRAKT_CLIENTID: ${{ secrets.TRAKT_CLIENTID }}
