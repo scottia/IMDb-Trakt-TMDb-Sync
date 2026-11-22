@@ -32,12 +32,9 @@ func NewCommand(ctx context.Context) *cobra.Command {
 		RunE: func(_ *cobra.Command, _ []string) error {
 			s, err := syncer.NewSyncer(ctx, conf)
 			if err != nil {
-				handled, fallbackErr := handleCachedWAFNoChange(err)
-				if fallbackErr != nil {
-					return fmt.Errorf("error creating syncer: %w; cached imdb fallback failed: %v", err, fallbackErr)
-				}
+				handled, degradedErr := handleCachedWAFSourceUnavailable(err)
 				if handled {
-					return nil
+					return degradedErr
 				}
 				return fmt.Errorf("error creating syncer: %w", err)
 			}

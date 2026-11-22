@@ -2,6 +2,7 @@ package sync
 
 import (
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,34 +13,41 @@ import (
 
 const cachedIMDbRatingsFile = "imdb-ratings.csv"
 
-var imdbWAFBlockedMessages = []string{
-	"aws waf challenge remained after solver token and reload",
-	"browser-native aws waf challenge did not clear",
-}
+var (
+	errIMDbSourceUnavailable = errors.New("imdb source unavailable")
+	imdbWAFBlockedMessages  = []string{
+		"aws waf challenge remained after solver token and reload",
+		"browser-native aws waf challenge did not clear",
+	}
+)
 
-func handleCachedWAFNoChange(sourceErr error) (bool, error) {
+func handleCachedWAFSourceUnavailable(sourceErr error) (bool, error) {
 	if !isIMDbWAFBlocked(sourceErr) {
 		return false, nil
 	}
 
 	count, err := cachedIMDbRatingsCount(strings.TrimSpace(os.Getenv("ITS_STATE_DIR")))
 	if err != nil {
-		return true, err
+		return true, fmt.Errorf("%w due to aws waf; cached baseline validation failed: %v", errIMDbSourceUnavailable, err)
 	}
 
 	log := logger.NewLogger(os.Stdout)
 	log.Warn(
-		"sync degraded; imdb source blocked by aws waf; preserving cached baseline and skipping destinations",
-		"status", "degraded_no_change",
+		"sync deferred; imdb source blocked by aws waf; no fresh source snapshot or destination sync was performed",
+		"status", "degraded_source_unavailable",
+		"source_snapshot", "unavailable",
+		"destinations_attempted", false,
+		"titles_synchronized", 0,
 		"cached_ratings", count,
 		logger.Error(sourceErr),
 	)
-	log.Info(
-		"sync completed",
-		"status", "degraded_no_change",
-		"cached_ratings", count,
+
+	return true, fmt.Errorf(
+		"%w due to aws waf; no sync performed; cached baseline preserved (%d ratings): %v",
+		errIMDbSourceUnavailable,
+		count,
+		sourceErr,
 	)
-	return true, nil
 }
 
 func isIMDbWAFBlocked(err error) bool {

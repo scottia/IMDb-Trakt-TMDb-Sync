@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -65,7 +66,7 @@ func TestCachedIMDbRatingsCount(t *testing.T) {
 	}
 }
 
-func TestHandleCachedWAFNoChangePreservesBaseline(t *testing.T) {
+func TestHandleCachedWAFSourceUnavailablePreservesBaselineAndFails(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, cachedIMDbRatingsFile)
 	before := []byte(cachedRatingsFixture)
@@ -74,41 +75,53 @@ func TestHandleCachedWAFNoChangePreservesBaseline(t *testing.T) {
 	}
 	t.Setenv("ITS_STATE_DIR", dir)
 
-	handled, err := handleCachedWAFNoChange(errors.New("aws waf challenge remained after solver token and reload"))
-	if err != nil {
-		t.Fatalf("handleCachedWAFNoChange() error: %v", err)
-	}
+	handled, err := handleCachedWAFSourceUnavailable(errors.New("aws waf challenge remained after solver token and reload"))
 	if !handled {
-		t.Fatal("handleCachedWAFNoChange() did not handle WAF error")
+		t.Fatal("handleCachedWAFSourceUnavailable() did not recognize WAF error")
+	}
+	if err == nil {
+		t.Fatal("WAF source outage must fail the sync command")
+	}
+	if !errors.Is(err, errIMDbSourceUnavailable) {
+		t.Fatalf("error = %v, want errIMDbSourceUnavailable", err)
+	}
+	if !strings.Contains(err.Error(), "no sync performed") {
+		t.Fatalf("error = %q, want explicit no-sync result", err)
 	}
 
 	after, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("read fixture after fallback: %v", err)
+		t.Fatalf("read fixture after source outage: %v", err)
 	}
 	if string(after) != string(before) {
-		t.Fatal("cached IMDb ratings baseline changed during degraded mode")
+		t.Fatal("cached IMDb ratings baseline changed during source outage")
 	}
 }
 
-func TestHandleCachedWAFNoChangeRequiresValidCache(t *testing.T) {
+func TestHandleCachedWAFSourceUnavailableRequiresValidCache(t *testing.T) {
 	t.Setenv("ITS_STATE_DIR", t.TempDir())
 
-	handled, err := handleCachedWAFNoChange(errors.New("aws waf challenge remained after solver token and reload"))
+	handled, err := handleCachedWAFSourceUnavailable(errors.New("aws waf challenge remained after solver token and reload"))
 	if !handled {
 		t.Fatal("WAF error should be recognized even when cache is unavailable")
 	}
 	if err == nil {
 		t.Fatal("expected missing cached baseline error")
 	}
+	if !errors.Is(err, errIMDbSourceUnavailable) {
+		t.Fatalf("error = %v, want errIMDbSourceUnavailable", err)
+	}
+	if !strings.Contains(err.Error(), "cached baseline validation failed") {
+		t.Fatalf("error = %q, want cache validation context", err)
+	}
 }
 
-func TestHandleCachedWAFNoChangeIgnoresOtherErrors(t *testing.T) {
-	handled, err := handleCachedWAFNoChange(errors.New("failure authenticating with the provided cookies"))
+func TestHandleCachedWAFSourceUnavailableIgnoresOtherErrors(t *testing.T) {
+	handled, err := handleCachedWAFSourceUnavailable(errors.New("failure authenticating with the provided cookies"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if handled {
-		t.Fatal("unrelated IMDb authentication error must not enter degraded mode")
+		t.Fatal("unrelated IMDb authentication error must not enter degraded source-unavailable handling")
 	}
 }
