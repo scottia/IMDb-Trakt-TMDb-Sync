@@ -1,0 +1,366 @@
+name: fix public IMDb ratings pagination
+
+on:
+  push:
+    branches:
+      - fix/public-imdb-ratings-pagination
+    paths:
+      - .github/workflows/fix-public-ratings-pagination.yaml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out correction branch
+        uses: actions/checkout@v5
+        with:
+          ref: fix/public-imdb-ratings-pagination
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: 1.25.13
+          cache-dependency-path: go.sum
+
+      - name: Apply bounded cursor pagination
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path("internal/imdb/public_ratings.go")
+          text = path.read_text()
+
+          text, count = re.subn(
+              r'const publicRatingsGraphQLEndpoint = "https://api\.graphql\.imdb\.com/"',
+              '''const (
+          \tpublicRatingsGraphQLEndpoint = "https://api.graphql.imdb.com/"
+          \tpublicRatingsPageSize        = 250
+          )''',
+              text,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit("endpoint constant anchor not found")
+
+          text, count = re.subn(
+              r'const publicRatingsQuery = `query UserRatings\(\$userId: ID!, \$first: Int!\) \{.*?\n\}`',
+              '''const publicRatingsQuery = `query UserRatings($userId: ID!, $first: Int!, $after: String) {
+            userRatings(userId: $userId, first: $first, after: $after) {
+              total
+              pageInfo { endCursor hasNextPage }
+              edges {
+                node {
+                  userRating { value date }
+                  title {
+                    id
+                    titleText { text }
+                    titleType { id isEpisode isSeries }
+                  }
+                }
+              }
+            }
+          }`''',
+              text,
+              count=1,
+              flags=re.S,
+          )
+          if count != 1:
+              raise SystemExit("ratings query anchor not found")
+
+          response_types = '''type publicRatingsConnection struct {
+          \tTotal    int `json:"total"`
+          \tPageInfo struct {
+          \t\tEndCursor   string `json:"endCursor"`
+          \t\tHasNextPage bool   `json:"hasNextPage"`
+          \t} `json:"pageInfo"`
+          \tEdges []struct {
+          \t\tNode *struct {
+          \t\t\tUserRating struct {
+          \t\t\t\tValue float64 `json:"value"`
+          \t\t\t\tDate  string  `json:"date"`
+          \t\t\t} `json:"userRating"`
+          \t\t\tTitle struct {
+          \t\t\t\tID        string `json:"id"`
+          \t\t\t\tTitleText struct {
+          \t\t\t\t\tText string `json:"text"`
+          \t\t\t\t} `json:"titleText"`
+          \t\t\t\tTitleType struct {
+          \t\t\t\t\tID        string `json:"id"`
+          \t\t\t\t\tIsEpisode bool   `json:"isEpisode"`
+          \t\t\t\t\tIsSeries  bool   `json:"isSeries"`
+          \t\t\t\t} `json:"titleType"`
+          \t\t\t} `json:"title"`
+          \t\t} `json:"node"`
+          \t} `json:"edges"`
+          }
+
+          type publicRatingsResponse struct {
+          \tData struct {
+          \t\tUserRatings *publicRatingsConnection `json:"userRatings"`
+          \t} `json:"data"`
+          \tErrors []graphQLError `json:"errors"`
+          }
+          '''
+          text, count = re.subn(
+              r'type publicRatingsResponse struct \{.*?\n\}\n\ntype publicRatingRow struct',
+              response_types + '\ntype publicRatingRow struct',
+              text,
+              count=1,
+              flags=re.S,
+          )
+          if count != 1:
+              raise SystemExit("ratings response type anchor not found")
+
+          ratings_export = '''func (c *publicRatingsClient) RatingsExport() error {
+          \tuserID, err := c.resolveUserID()
+          \tif err != nil {
+          \t\treturn fmt.Errorf("failure resolving public IMDb ratings user: %w", err)
+          \t}
+          \tsummary, err := c.fetchRatings(userID, 1, "")
+          \tif err != nil {
+          \t\treturn fmt.Errorf("failure reading public IMDb ratings summary: %w", err)
+          \t}
+          \ttotal := summary.Data.UserRatings.Total
+          \tif total < 0 || total > 100000 {
+          \t\treturn fmt.Errorf("public IMDb ratings count %d is outside the supported range", total)
+          \t}
+          \tresponse := summary
+          \tif total > 1 {
+          \t\tresponse, err = c.fetchAllRatings(userID, total)
+          \t\tif err != nil {
+          \t\t\treturn fmt.Errorf("failure reading public IMDb ratings: %w", err)
+          \t\t}
+          \t}
+          \trows, err := normalizePublicRatings(response)
+          \tif err != nil {
+          \t\treturn err
+          \t}
+          \tif len(rows) != total {
+          \t\treturn fmt.Errorf("IMDb reported %d public ratings but returned %d complete rows", total, len(rows))
+          \t}
+          \titems, data, err := encodePublicRatings(rows)
+          \tif err != nil {
+          \t\treturn err
+          \t}
+          \tc.ratings = items
+          \tc.ratingsCSV = data
+          \tc.logger.Info("downloaded public imdb ratings", "count", len(items))
+          \treturn nil
+          }
+          '''
+          text, count = re.subn(
+              r'func \(c \*publicRatingsClient\) RatingsExport\(\) error \{.*?\n\}\n\nfunc \(c \*publicRatingsClient\) RatingsGet',
+              ratings_export + '\nfunc (c *publicRatingsClient) RatingsGet',
+              text,
+              count=1,
+              flags=re.S,
+          )
+          if count != 1:
+              raise SystemExit("RatingsExport anchor not found")
+
+          fetch_functions = '''func (c *publicRatingsClient) fetchAllRatings(userID string, total int) (*publicRatingsResponse, error) {
+          \taggregate := &publicRatingsResponse{}
+          \taggregate.Data.UserRatings = &publicRatingsConnection{
+          \t\tTotal: total,
+          \t\tEdges: make([]struct {
+          \t\t\tNode *struct {
+          \t\t\t\tUserRating struct {
+          \t\t\t\t\tValue float64 `json:"value"`
+          \t\t\t\t\tDate  string  `json:"date"`
+          \t\t\t\t} `json:"userRating"`
+          \t\t\t\tTitle struct {
+          \t\t\t\t\tID        string `json:"id"`
+          \t\t\t\t\tTitleText struct {
+          \t\t\t\t\t\tText string `json:"text"`
+          \t\t\t\t\t} `json:"titleText"`
+          \t\t\t\t\tTitleType struct {
+          \t\t\t\t\t\tID        string `json:"id"`
+          \t\t\t\t\t\tIsEpisode bool   `json:"isEpisode"`
+          \t\t\t\t\t\tIsSeries  bool   `json:"isSeries"`
+          \t\t\t\t\t} `json:"titleType"`
+          \t\t\t\t} `json:"title"`
+          \t\t\t} `json:"node"`
+          \t\t}, 0, total),
+          \t}
+          \tafter := ""
+          \tseenCursors := make(map[string]struct{})
+          \tfor page := 1; ; page++ {
+          \t\tresponse, err := c.fetchRatings(userID, publicRatingsPageSize, after)
+          \t\tif err != nil {
+          \t\t\treturn nil, fmt.Errorf("page %d: %w", page, err)
+          \t\t}
+          \t\tconnection := response.Data.UserRatings
+          \t\tif connection.Total != total {
+          \t\t\treturn nil, fmt.Errorf("public IMDb ratings total changed during pagination from %d to %d", total, connection.Total)
+          \t\t}
+          \t\taggregate.Data.UserRatings.Edges = append(aggregate.Data.UserRatings.Edges, connection.Edges...)
+          \t\tif len(aggregate.Data.UserRatings.Edges) > total {
+          \t\t\treturn nil, fmt.Errorf("IMDb reported %d public ratings but pagination returned at least %d rows", total, len(aggregate.Data.UserRatings.Edges))
+          \t\t}
+          \t\tif !connection.PageInfo.HasNextPage {
+          \t\t\tbreak
+          \t\t}
+          \t\tcursor := strings.TrimSpace(connection.PageInfo.EndCursor)
+          \t\tif cursor == "" {
+          \t\t\treturn nil, fmt.Errorf("IMDb indicated another ratings page without an end cursor")
+          \t\t}
+          \t\tif _, duplicate := seenCursors[cursor]; duplicate {
+          \t\t\treturn nil, fmt.Errorf("IMDb repeated ratings pagination cursor %q", cursor)
+          \t\t}
+          \t\tif len(connection.Edges) == 0 {
+          \t\t\treturn nil, fmt.Errorf("IMDb indicated another ratings page after returning no rows")
+          \t\t}
+          \t\tseenCursors[cursor] = struct{}{}
+          \t\tafter = cursor
+          \t}
+          \tif len(aggregate.Data.UserRatings.Edges) != total {
+          \t\treturn nil, fmt.Errorf("IMDb reported %d public ratings but pagination returned %d rows", total, len(aggregate.Data.UserRatings.Edges))
+          \t}
+          \treturn aggregate, nil
+          }
+
+          func (c *publicRatingsClient) fetchRatings(userID string, first int, after string) (*publicRatingsResponse, error) {
+          \tvariables := map[string]any{"userId": userID, "first": first}
+          \tif after != "" {
+          \t\tvariables["after"] = after
+          \t}
+          \tvar response publicRatingsResponse
+          \tif err := c.query(publicRatingsQuery, variables, &response); err != nil {
+          \t\treturn nil, err
+          \t}
+          \tif response.Data.UserRatings == nil {
+          \t\treturn nil, fmt.Errorf("IMDb returned no public ratings data")
+          \t}
+          \treturn &response, nil
+          }
+          '''
+          text, count = re.subn(
+              r'func \(c \*publicRatingsClient\) fetchRatings\(userID string, first int\) \(\*publicRatingsResponse, error\) \{.*?\n\}\n\nfunc \(c \*publicRatingsClient\) query',
+              fetch_functions + '\nfunc (c *publicRatingsClient) query',
+              text,
+              count=1,
+              flags=re.S,
+          )
+          if count != 1:
+              raise SystemExit("fetchRatings anchor not found")
+
+          path.write_text(text)
+          PY
+
+          cat > internal/imdb/public_ratings_pagination_test.go <<'EOF'
+          package imdb
+
+          import (
+              "context"
+              "encoding/json"
+              "io"
+              "log/slog"
+              "net/http"
+              "net/http/httptest"
+              "testing"
+          )
+
+          func TestPublicRatingsClientUsesCursorPagination(t *testing.T) {
+              requests := 0
+              server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+                  requests++
+                  var payload struct {
+                      Variables struct {
+                          UserID string  `json:"userId"`
+                          First  int     `json:"first"`
+                          After  *string `json:"after"`
+                      } `json:"variables"`
+                  }
+                  if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+                      t.Fatalf("decode request: %v", err)
+                  }
+
+                  userRatings := map[string]any{"total": 3}
+                  switch requests {
+                  case 1:
+                      if payload.Variables.First != 1 || payload.Variables.After != nil {
+                          t.Fatalf("summary variables = first:%d after:%v", payload.Variables.First, payload.Variables.After)
+                      }
+                      userRatings["pageInfo"] = map[string]any{"endCursor": "summary", "hasNextPage": true}
+                      userRatings["edges"] = []map[string]any{paginationEdge("tt0000001", "2026-11-20")}
+                  case 2:
+                      if payload.Variables.First != publicRatingsPageSize || payload.Variables.After != nil {
+                          t.Fatalf("page 1 variables = first:%d after:%v", payload.Variables.First, payload.Variables.After)
+                      }
+                      userRatings["pageInfo"] = map[string]any{"endCursor": "cursor-1", "hasNextPage": true}
+                      userRatings["edges"] = []map[string]any{
+                          paginationEdge("tt0000001", "2026-11-20"),
+                          paginationEdge("tt0000002", "2026-11-21"),
+                      }
+                  case 3:
+                      if payload.Variables.First != publicRatingsPageSize || payload.Variables.After == nil || *payload.Variables.After != "cursor-1" {
+                          t.Fatalf("page 2 variables = first:%d after:%v", payload.Variables.First, payload.Variables.After)
+                      }
+                      userRatings["pageInfo"] = map[string]any{"endCursor": "cursor-2", "hasNextPage": false}
+                      userRatings["edges"] = []map[string]any{paginationEdge("tt0000003", "2026-11-22")}
+                  default:
+                      t.Fatalf("unexpected request %d", requests)
+                  }
+                  _ = json.NewEncoder(w).Encode(map[string]any{
+                      "data": map[string]any{"userRatings": userRatings},
+                  })
+              }))
+              defer server.Close()
+
+              api, err := newPublicRatingsAPI(
+                  context.Background(),
+                  "ur1234567",
+                  slog.New(slog.NewTextHandler(io.Discard, nil)),
+                  server.Client(),
+                  server.URL,
+              )
+              if err != nil {
+                  t.Fatalf("newPublicRatingsAPI() error = %v", err)
+              }
+              if err := api.RatingsExport(); err != nil {
+                  t.Fatalf("RatingsExport() error = %v", err)
+              }
+              items, err := api.RatingsGet()
+              if err != nil {
+                  t.Fatalf("RatingsGet() error = %v", err)
+              }
+              if requests != 3 || len(items) != 3 {
+                  t.Fatalf("requests=%d items=%d, want 3/3", requests, len(items))
+              }
+          }
+
+          func paginationEdge(id, date string) map[string]any {
+              return map[string]any{
+                  "node": map[string]any{
+                      "userRating": map[string]any{"value": 8, "date": date},
+                      "title": map[string]any{
+                          "id": id,
+                          "titleText": map[string]any{"text": id},
+                          "titleType": map[string]any{"id": "movie", "isEpisode": false, "isSeries": false},
+                      },
+                  },
+              }
+          }
+          EOF
+
+      - name: Format and validate
+        run: |
+          gofmt -w internal/imdb/public_ratings.go internal/imdb/public_ratings_pagination_test.go
+          go test ./...
+          make build
+          make lint
+
+      - name: Commit correction
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/fix-public-ratings-pagination.yaml
+          git add internal/imdb/public_ratings.go internal/imdb/public_ratings_pagination_test.go
+          git commit -m "fix(imdb): paginate large public ratings libraries"
+          git push origin HEAD:fix/public-imdb-ratings-pagination
