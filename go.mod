@@ -3,7 +3,7 @@ module github.com/scottia/IMDb-Trakt-TMDb-Sync
 go 1.25.13
 
 require (
-	github.com/cecobask/awswaf v0.0.0-20260725211019-1514ae79b911
+	github.com/cecobask/awswaf v0.0.0-20261028154335-9541c982a205
 	github.com/charmbracelet/bubbles v0.21.0
 	github.com/charmbracelet/bubbletea v1.3.9
 	github.com/charmbracelet/lipgloss v1.1.0
