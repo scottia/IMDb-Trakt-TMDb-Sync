@@ -16,7 +16,10 @@ import (
 	"time"
 )
 
-const publicRatingsGraphQLEndpoint = "https://api.graphql.imdb.com/"
+const (
+	publicRatingsGraphQLEndpoint = "https://api.graphql.imdb.com/"
+	publicRatingsPageSize        = 250
+)
 
 var (
 	publicRatingsUserIDPattern    = regexp.MustCompile(`^ur\d{6,12}$`)
@@ -27,9 +30,10 @@ const publicProfileQuery = `query Profile($id: ID!) {
   userProfile(input: { profileId: $id }) { userId }
 }`
 
-const publicRatingsQuery = `query UserRatings($userId: ID!, $first: Int!) {
-  userRatings(userId: $userId, first: $first) {
+const publicRatingsQuery = `query UserRatings($userId: ID!, $first: Int!, $after: String) {
+  userRatings(userId: $userId, first: $first, after: $after) {
     total
+    pageInfo { endCursor hasNextPage }
     edges {
       node {
         userRating { value date }
@@ -66,30 +70,36 @@ type publicProfileResponse struct {
 	Errors []graphQLError `json:"errors"`
 }
 
+type publicRatingsConnection struct {
+	Total    int `json:"total"`
+	PageInfo struct {
+		EndCursor   string `json:"endCursor"`
+		HasNextPage bool   `json:"hasNextPage"`
+	} `json:"pageInfo"`
+	Edges []struct {
+		Node *struct {
+			UserRating struct {
+				Value float64 `json:"value"`
+				Date  string  `json:"date"`
+			} `json:"userRating"`
+			Title struct {
+				ID        string `json:"id"`
+				TitleText struct {
+					Text string `json:"text"`
+				} `json:"titleText"`
+				TitleType struct {
+					ID        string `json:"id"`
+					IsEpisode bool   `json:"isEpisode"`
+					IsSeries  bool   `json:"isSeries"`
+				} `json:"titleType"`
+			} `json:"title"`
+		} `json:"node"`
+	} `json:"edges"`
+}
+
 type publicRatingsResponse struct {
 	Data struct {
-		UserRatings *struct {
-			Total int `json:"total"`
-			Edges []struct {
-				Node *struct {
-					UserRating struct {
-						Value float64 `json:"value"`
-						Date  string  `json:"date"`
-					} `json:"userRating"`
-					Title struct {
-						ID        string `json:"id"`
-						TitleText struct {
-							Text string `json:"text"`
-						} `json:"titleText"`
-						TitleType struct {
-							ID        string `json:"id"`
-							IsEpisode bool   `json:"isEpisode"`
-							IsSeries  bool   `json:"isSeries"`
-						} `json:"titleType"`
-					} `json:"title"`
-				} `json:"node"`
-			} `json:"edges"`
-		} `json:"userRatings"`
+		UserRatings *publicRatingsConnection `json:"userRatings"`
 	} `json:"data"`
 	Errors []graphQLError `json:"errors"`
 }
@@ -177,7 +187,7 @@ func (c *publicRatingsClient) RatingsExport() error {
 	if err != nil {
 		return fmt.Errorf("failure resolving public IMDb ratings user: %w", err)
 	}
-	summary, err := c.fetchRatings(userID, 1)
+	summary, err := c.fetchRatings(userID, 1, "")
 	if err != nil {
 		return fmt.Errorf("failure reading public IMDb ratings summary: %w", err)
 	}
@@ -187,7 +197,7 @@ func (c *publicRatingsClient) RatingsExport() error {
 	}
 	response := summary
 	if total > 1 {
-		response, err = c.fetchRatings(userID, total)
+		response, err = c.fetchAllRatings(userID, total)
 		if err != nil {
 			return fmt.Errorf("failure reading public IMDb ratings: %w", err)
 		}
@@ -236,9 +246,74 @@ func (c *publicRatingsClient) resolveUserID() (string, error) {
 	return response.Data.UserProfile.UserID, nil
 }
 
-func (c *publicRatingsClient) fetchRatings(userID string, first int) (*publicRatingsResponse, error) {
+func (c *publicRatingsClient) fetchAllRatings(userID string, total int) (*publicRatingsResponse, error) {
+	aggregate := &publicRatingsResponse{}
+	aggregate.Data.UserRatings = &publicRatingsConnection{
+		Total: total,
+		Edges: make([]struct {
+			Node *struct {
+				UserRating struct {
+					Value float64 `json:"value"`
+					Date  string  `json:"date"`
+				} `json:"userRating"`
+				Title struct {
+					ID        string `json:"id"`
+					TitleText struct {
+						Text string `json:"text"`
+					} `json:"titleText"`
+					TitleType struct {
+						ID        string `json:"id"`
+						IsEpisode bool   `json:"isEpisode"`
+						IsSeries  bool   `json:"isSeries"`
+					} `json:"titleType"`
+				} `json:"title"`
+			} `json:"node"`
+		}, 0, total),
+	}
+	after := ""
+	seenCursors := make(map[string]struct{})
+	for page := 1; ; page++ {
+		response, err := c.fetchRatings(userID, publicRatingsPageSize, after)
+		if err != nil {
+			return nil, fmt.Errorf("page %d: %w", page, err)
+		}
+		connection := response.Data.UserRatings
+		if connection.Total != total {
+			return nil, fmt.Errorf("public IMDb ratings total changed during pagination from %d to %d", total, connection.Total)
+		}
+		aggregate.Data.UserRatings.Edges = append(aggregate.Data.UserRatings.Edges, connection.Edges...)
+		if len(aggregate.Data.UserRatings.Edges) > total {
+			return nil, fmt.Errorf("IMDb reported %d public ratings but pagination returned at least %d rows", total, len(aggregate.Data.UserRatings.Edges))
+		}
+		if !connection.PageInfo.HasNextPage {
+			break
+		}
+		cursor := strings.TrimSpace(connection.PageInfo.EndCursor)
+		if cursor == "" {
+			return nil, fmt.Errorf("IMDb indicated another ratings page without an end cursor")
+		}
+		if _, duplicate := seenCursors[cursor]; duplicate {
+			return nil, fmt.Errorf("IMDb repeated ratings pagination cursor %q", cursor)
+		}
+		if len(connection.Edges) == 0 {
+			return nil, fmt.Errorf("IMDb indicated another ratings page after returning no rows")
+		}
+		seenCursors[cursor] = struct{}{}
+		after = cursor
+	}
+	if len(aggregate.Data.UserRatings.Edges) != total {
+		return nil, fmt.Errorf("IMDb reported %d public ratings but pagination returned %d rows", total, len(aggregate.Data.UserRatings.Edges))
+	}
+	return aggregate, nil
+}
+
+func (c *publicRatingsClient) fetchRatings(userID string, first int, after string) (*publicRatingsResponse, error) {
+	variables := map[string]any{"userId": userID, "first": first}
+	if after != "" {
+		variables["after"] = after
+	}
 	var response publicRatingsResponse
-	if err := c.query(publicRatingsQuery, map[string]any{"userId": userID, "first": first}, &response); err != nil {
+	if err := c.query(publicRatingsQuery, variables, &response); err != nil {
 		return nil, err
 	}
 	if response.Data.UserRatings == nil {
