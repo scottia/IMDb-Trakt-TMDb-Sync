@@ -16,9 +16,7 @@ import (
 )
 
 const (
-	pathAuthCodes           = "/oauth/device/code"
-	pathAuthTokens          = "/oauth/device/token"
-	pathBaseAPI             = "https://api.trakt.tv"
+	traktAPIBaseURL         = "https://api.trakt.tv"
 	pathHistory             = "/sync/history"
 	pathHistoryGet          = "/sync/history/%s/%s"
 	pathHistoryRemove       = "/sync/history/remove"
@@ -76,7 +74,7 @@ func NewAPI(ctx context.Context, conf config.Trakt, logger *slog.Logger) (API, e
 		logger,
 	)
 	c := &client{
-		baseURL: pathBaseAPI,
+		baseURL: traktAPIBaseURL,
 		httpClient: &http.Client{
 			Transport: transport,
 		},
