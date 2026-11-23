@@ -625,6 +625,13 @@ func (s *Syncer) syncHistory(ctx context.Context) error {
 		s.logger.Info("no history to add to trakt")
 	}
 	if len(diff.Remove) > 0 {
+		if *s.conf.Mode == appconfig.SyncModeAddOnly {
+			s.logger.Info(
+				"skipping trakt history removal checks in add-only mode",
+				"candidates", len(diff.Remove),
+			)
+			return nil
+		}
 		var historyToRemove trakt.Items
 		for i := range diff.Remove {
 			traktItemID, err := diff.Remove[i].GetItemID()
@@ -641,7 +648,7 @@ func (s *Syncer) syncHistory(ctx context.Context) error {
 			historyToRemove = append(historyToRemove, diff.Remove[i])
 		}
 		if len(historyToRemove) > 0 {
-			if *s.conf.Mode == appconfig.SyncModeDryRun || *s.conf.Mode == appconfig.SyncModeAddOnly {
+			if *s.conf.Mode == appconfig.SyncModeDryRun {
 				s.logger.Info("sync would have deleted trakt history", "count", len(historyToRemove))
 			} else {
 				if err := s.traktClient.HistoryRemove(ctx, historyToRemove); err != nil {
