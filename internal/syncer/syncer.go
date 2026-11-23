@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	appconfig "github.com/scottia/IMDb-Trakt-TMDb-Sync/internal/config"
@@ -50,9 +51,39 @@ func NewSyncer(ctx context.Context, conf *appconfig.Config) (*Syncer, error) {
 	sourceLists := (*conf.Trakt.Enabled && *conf.Trakt.SyncLists) || (*conf.TMDb.Enabled && *conf.TMDb.SyncLists)
 	sourceWatchlist := (*conf.Trakt.Enabled && *conf.Trakt.SyncWatchlist) || (*conf.TMDb.Enabled && *conf.TMDb.SyncWatchlist)
 
+	publicRatingsRef := ""
+	if conf.IMDb.RatingsUserList != nil {
+		publicRatingsRef = strings.TrimSpace(*conf.IMDb.RatingsUserList)
+	}
+	publicRatingsConfigured := publicRatingsRef != ""
+
 	sourceTimeout := sourcePhaseTimeout(conf)
 	sourceCtx, sourceCancel := context.WithTimeout(ctx, sourceTimeout)
-	imdbClient, err := imdb.NewAPI(sourceCtx, &conf.IMDb, log)
+	var (
+		imdbClient        imdb.API
+		err               error
+		publicRatingsOnly bool
+	)
+	if publicRatingsConfigured && sourceRatings && !sourceLists && !sourceWatchlist {
+		imdbClient, err = imdb.NewPublicRatingsAPI(sourceCtx, publicRatingsRef, log)
+		if err == nil {
+			publicRatingsOnly = true
+			log.Info("using anonymous public imdb ratings source")
+		}
+	} else {
+		imdbClient, err = imdb.NewAPI(sourceCtx, &conf.IMDb, log)
+		if err != nil && publicRatingsConfigured && sourceRatings && imdb.IsWAFBlocked(err) {
+			browserErr := err
+			imdbClient, err = imdb.NewPublicRatingsAPI(sourceCtx, publicRatingsRef, log)
+			if err == nil {
+				publicRatingsOnly = true
+				log.Warn(
+					"imdb browser source blocked by aws waf; using anonymous public ratings source",
+					logger.Error(browserErr),
+				)
+			}
+		}
+	}
 	if err != nil {
 		sourceCancel()
 		return nil, fmt.Errorf("failure initialising imdb client: %w", err)
@@ -66,6 +97,19 @@ func NewSyncer(ctx context.Context, conf *appconfig.Config) (*Syncer, error) {
 		Lists:     conf.Trakt.SyncLists,
 		Timeout:   conf.Trakt.SyncTimeout,
 	}
+	tmdbConf := conf.TMDb
+	if publicRatingsOnly {
+		disabled := false
+		if sourceLists || sourceWatchlist {
+			log.Warn("public imdb ratings source cannot supply watchlist or custom lists; those source features are deferred for this run")
+		}
+		sourceLists = false
+		sourceWatchlist = false
+		traktSync.Watchlist = &disabled
+		traktSync.Lists = &disabled
+		tmdbConf.SyncWatchlist = &disabled
+		tmdbConf.SyncLists = &disabled
+	}
 
 	syncer := &Syncer{
 		logger:            log,
@@ -73,8 +117,8 @@ func NewSyncer(ctx context.Context, conf *appconfig.Config) (*Syncer, error) {
 		traktConf:         conf.Trakt,
 		user:              &user{},
 		conf:              traktSync,
-		authless:          *conf.IMDb.Auth == appconfig.IMDbAuthMethodNone,
-		tmdbConf:          conf.TMDb,
+		authless:          *conf.IMDb.Auth == appconfig.IMDbAuthMethodNone && !publicRatingsOnly,
+		tmdbConf:          tmdbConf,
 		sourceCancel:      sourceCancel,
 		sourceRatings:     sourceRatings,
 		sourceLists:       sourceLists,
@@ -100,7 +144,7 @@ func NewSyncer(ctx context.Context, conf *appconfig.Config) (*Syncer, error) {
 			}
 		}
 	}
-	if *conf.Trakt.Enabled && (*conf.Trakt.SyncLists || *conf.Trakt.SyncWatchlist) {
+	if *conf.Trakt.Enabled && (*traktSync.Lists || *traktSync.Watchlist) {
 		syncer.user.traktLists = make(map[string]trakt.List, len(*conf.IMDb.Lists)+1)
 	}
 	return syncer, nil
@@ -581,6 +625,13 @@ func (s *Syncer) syncHistory(ctx context.Context) error {
 		s.logger.Info("no history to add to trakt")
 	}
 	if len(diff.Remove) > 0 {
+		if *s.conf.Mode == appconfig.SyncModeAddOnly {
+			s.logger.Info(
+				"skipping trakt history removal checks in add-only mode",
+				"candidates", len(diff.Remove),
+			)
+			return nil
+		}
 		var historyToRemove trakt.Items
 		for i := range diff.Remove {
 			traktItemID, err := diff.Remove[i].GetItemID()
@@ -597,7 +648,7 @@ func (s *Syncer) syncHistory(ctx context.Context) error {
 			historyToRemove = append(historyToRemove, diff.Remove[i])
 		}
 		if len(historyToRemove) > 0 {
-			if *s.conf.Mode == appconfig.SyncModeDryRun || *s.conf.Mode == appconfig.SyncModeAddOnly {
+			if *s.conf.Mode == appconfig.SyncModeDryRun {
 				s.logger.Info("sync would have deleted trakt history", "count", len(historyToRemove))
 			} else {
 				if err := s.traktClient.HistoryRemove(ctx, historyToRemove); err != nil {

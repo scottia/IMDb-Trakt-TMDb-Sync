@@ -88,6 +88,7 @@ Settings → Secrets and variables → Actions
 | --- | --- | --- | --- |
 | `IMDB_COOKIEATMAIN` | `ITS_IMDB_COOKIEATMAIN` | Default IMDb cookie auth / bootstrap fallback | Sign in to IMDb in a desktop browser, open Developer Tools → Application/Storage → Cookies → `https://www.imdb.com`, then copy the `at-main` cookie value. Treat it like a password. |
 | `IMDB_COOKIE_JAR` | Seeded into `ITS_IMDB_COOKIEJARFILE` | Unattended IMDb cookie recycling after the first successful bootstrap | **Do not create manually.** If absent, the Runner bootstraps from `IMDB_COOKIEATMAIN`; after successful IMDb authentication and hydration, it persists the allowlisted IMDb cookie jar to this secret and reuses it on later runs. |
+| `IMDB_RATINGS_USER_LIST` | `ITS_IMDB_RATINGSUSERLIST` | Optional anonymous ratings source / WAF fallback | Set this to a public IMDb ratings URL or its `ur...` / `p....` user identifier. When browser acquisition is blocked by IMDb WAF, ratings and rating-derived history continue from IMDb's public ratings data without sending Amazon credentials or cookies. Watchlist and custom-list sync are deferred for that run. |
 | `TRAKT_CLIENTID` | `ITS_TRAKT_CLIENTID` | Trakt enabled | Create a Trakt API application at [Trakt API Apps](https://app.trakt.tv/settings/apps) and copy its Client ID. |
 | `TRAKT_CLIENTSECRET` | `ITS_TRAKT_CLIENTSECRET` | Trakt enabled | Copy the Client Secret from the same Trakt API application. |
 | `TRAKT_TOKEN` | Seeded into `TRAKT_TOKENFILE` | Unattended Trakt runs after first authorization | Do not create manually. On the first run, follow the device-code authorization shown in the workflow log. Normal refreshes use Trakt's OAuth token endpoint and the Runner persists the replacement access/refresh token pair back to this secret. |
@@ -160,6 +161,7 @@ The production Runner workflow passes sensitive credentials and ephemeral creden
 ```yaml
 env:
   ITS_IMDB_COOKIEATMAIN: ${{ secrets.IMDB_COOKIEATMAIN }}
+  ITS_IMDB_RATINGSUSERLIST: ${{ secrets.IMDB_RATINGS_USER_LIST }}
   ITS_IMDB_COOKIEJARFILE: ${{ github.workspace }}/imdb-cookie-jar.json
 
   ITS_TRAKT_CLIENTID: ${{ secrets.TRAKT_CLIENTID }}
@@ -171,6 +173,8 @@ env:
 ```
 
 The private Runner seeds `ITS_IMDB_COOKIEJARFILE` from the `IMDB_COOKIE_JAR` repository secret when present, lets the application refresh the allowlisted jar after successful authentication/hydration, and persists a changed jar back to the same secret.
+
+When `IMDB_RATINGS_USER_LIST` is present, the application accepts either the full public IMDb ratings URL or the profile's `ur...` / `p....` identifier. If the browser path is stopped by AWS WAF, the application retrieves a fresh anonymous ratings snapshot, feeds it into the existing persistent CSV delta pipeline, and continues Trakt ratings/history and TMDb ratings. It never treats the previous committed CSV as fresh source data. Watchlist and custom-list destinations are skipped rather than cleared when only the public ratings source is available.
 
 All destination switches, modes, feature choices, list IDs, tracing behavior, and timeouts belong in private `config.yaml`, not in dozens of GitHub Actions secrets.
 
