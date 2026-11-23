@@ -221,6 +221,12 @@ For a fork, change both the source checkout `repository:` value and `STATUS_REPO
 
 Keep `GH_PAT` and `STATUS_PAT` separate: `GH_PAT` is scoped to the private Runner for Runner-managed authentication-secret updates; `STATUS_PAT` is scoped to the public source repository only for status publication.
 
+## Notice
+
+```bash
+IMDb to Trakt TMDB Sync uses Trakt but is not endorsed or certified by Trakt
+```
+
 ## Development
 
 ```bash
